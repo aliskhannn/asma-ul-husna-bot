@@ -1,0 +1,804 @@
+{
+  "names": [
+    {
+      "number": 1,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u062d\u0652\u0645\u064e\u0646\u064f",
+      "transliteration": "Ар-Рахман",
+      "translation": "Милостивый",
+      "meaning": "Тот, кто милостив ко всем творениям в этом мире.",
+      "audio": "rahman.mp3"
+    },
+    {
+      "number": 2,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u062d\u0650\u064a\u0645\u064f",
+      "transliteration": "Ар-Рахим",
+      "translation": "Милосердный",
+      "meaning": "Тот, кто особенно милосерден к верующим в загробной жизни.",
+      "audio": "rahim.mp3"
+    },
+    {
+      "number": 3,
+      "name": "\u0627\u0644\u0652\u0645\u064e\u0644\u0650\u0643\u064f",
+      "transliteration": "Аль-Малик",
+      "translation": "Царь",
+      "meaning": "Абсолютный правитель всего, Владыка Судного дня.",
+      "audio": "malik.mp3"
+    },
+    {
+      "number": 4,
+      "name": "\u0627\u0644\u0652\u0642\u064f\u062f\u064f\u0651\u0648\u0633\u064f",
+      "transliteration": "Аль-Куддус",
+      "translation": "Святой",
+      "meaning": "Тот, кто свободен от любых недостатков и несовершенств.",
+      "audio": "quddus.mp3"
+    },
+    {
+      "number": 5,
+      "name": "\u0627\u0644\u0633\u064e\u0651\u0644\u0627\u064e\u0645\u064f",
+      "transliteration": "Ас-Салам",
+      "translation": "Миротворящий",
+      "meaning": "Тот, кто безупречен и дарует мир и безопасность.",
+      "audio": "salam.mp3"
+    },
+    {
+      "number": 6,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0624\u0652\u0645\u0650\u0646\u064f",
+      "transliteration": "Аль-Мумин",
+      "translation": "Оберегающий",
+      "meaning": "Тот, кто дарует безопасность и подтверждает истину.",
+      "audio": "mumin.mp3"
+    },
+    {
+      "number": 7,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0647\u064e\u064a\u0652\u0645\u0650\u0646\u064f",
+      "transliteration": "Аль-Мухаймин",
+      "translation": "Хранитель",
+      "meaning": "Тот, кто наблюдает, охраняет и защищает все.",
+      "audio": "muhaimin.mp3"
+    },
+    {
+      "number": 8,
+      "name": "\u0627\u0644\u0652\u0639\u064e\u0632\u0650\u064a\u0632\u064f",
+      "transliteration": "Аль-Азиз",
+      "translation": "Могущественный",
+      "meaning": "Тот, кто всемогущ и непобедим.",
+      "audio": "aziz.mp3"
+    },
+    {
+      "number": 9,
+      "name": "\u0627\u0644\u0652\u062c\u064e\u0628\u064e\u0651\u0627\u0631\u064f",
+      "transliteration": "Аль-Джаббар",
+      "translation": "Могучий",
+      "meaning": "Тот, кто навязывает Свою волю и исправляет состояние творения.",
+      "audio": "jabbar.mp3"
+    },
+    {
+      "number": 10,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u062a\u064e\u0643\u064e\u0628\u0650\u0651\u0631\u064f",
+      "transliteration": "Аль-Мутакаббир",
+      "translation": "Превознесенный",
+      "meaning": "Тот, кто выше всего и кому принадлежит все величие.",
+      "audio": "mutakabbir.mp3"
+    },
+    {
+      "number": 11,
+      "name": "\u0627\u0644\u0652\u062e\u064e\u0627\u0644\u0650\u0642\u064f",
+      "transliteration": "Аль-Халик",
+      "translation": "Творец",
+      "meaning": "Тот, кто создает все из ничего.",
+      "audio": "khaliq.mp3"
+    },
+    {
+      "number": 12,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u0627\u0631\u0650\u0626\u064f",
+      "transliteration": "Аль-Бари",
+      "translation": "Создатель",
+      "meaning": "Тот, кто создает гармонично и без предшествующего образца.",
+      "audio": "bari.mp3"
+    },
+    {
+      "number": 13,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0635\u064e\u0648\u0650\u0651\u0631\u064f",
+      "transliteration": "Аль-Мусаввир",
+      "translation": "Формирующий",
+      "meaning": "Тот, кто придает форму и облик каждому творению.",
+      "audio": "musawwir.mp3"
+    },
+    {
+      "number": 14,
+      "name": "\u0627\u0644\u0652\u063a\u064e\u0641\u064e\u0651\u0627\u0631\u064f",
+      "transliteration": "Аль-Гаффар",
+      "translation": "Прощающий",
+      "meaning": "Тот, кто много прощает и скрывает грехи.",
+      "audio": "ghaffar.mp3"
+    },
+    {
+      "number": 15,
+      "name": "\u0627\u0644\u0652\u0642\u064e\u0647\u064e\u0651\u0627\u0631\u064f",
+      "transliteration": "Аль-Каххар",
+      "translation": "Господствующий",
+      "meaning": "Тот, кто побеждает все и кому все подчиняется.",
+      "audio": "qahhar.mp3"
+    },
+    {
+      "number": 16,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0647\u064e\u0651\u0627\u0628\u064f",
+      "transliteration": "Аль-Ваххаб",
+      "translation": "Дарующий",
+      "meaning": "Тот, кто дает обильно, не ожидая ничего взамен.",
+      "audio": "wahhab.mp3"
+    },
+    {
+      "number": 17,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u0632\u064e\u0651\u0627\u0642\u064f",
+      "transliteration": "Ар-Раззак",
+      "translation": "Дающий удел",
+      "meaning": "Тот, кто обеспечивает пропитание всем творениям.",
+      "audio": "razzaq.mp3"
+    },
+    {
+      "number": 18,
+      "name": "\u0627\u0644\u0652\u0641\u064e\u062a\u064e\u0651\u0627\u062d\u064f",
+      "transliteration": "Аль-Фаттах",
+      "translation": "Открывающий",
+      "meaning": "Тот, кто открывает врата милости и решает все проблемы.",
+      "audio": "fattah.mp3"
+    },
+    {
+      "number": 19,
+      "name": "\u0627\u064e\u0644\u0652\u0639\u064e\u0644\u0650\u064a\u0652\u0645\u064f",
+      "transliteration": "Аль-Алим",
+      "translation": "Всезнающий",
+      "meaning": "Тот, кто знает все, скрытое и явное.",
+      "audio": "alim.mp3"
+    },
+    {
+      "number": 20,
+      "name": "\u0627\u0644\u0652\u0642\u064e\u0627\u0628\u0650\u0636\u064f",
+      "transliteration": "Аль-Кабид",
+      "translation": "Сжимающий",
+      "meaning": "Тот, кто ограничивает удел и забирает души.",
+      "audio": "qabid.mp3"
+    },
+    {
+      "number": 21,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u0627\u0633\u0650\u0637\u064f",
+      "transliteration": "Аль-Басит",
+      "translation": "Расширяющий",
+      "meaning": "Тот, кто дает обильный удел и продлевает жизнь.",
+      "audio": "basit.mp3"
+    },
+    {
+      "number": 22,
+      "name": "\u0627\u0644\u0652\u062e\u064e\u0627\u0641\u0650\u0636\u064f",
+      "transliteration": "Аль-Хафид",
+      "translation": "Унижающий",
+      "meaning": "Тот, кто унижает неверующих и высокомерных.",
+      "audio": "khafid.mp3"
+    },
+    {
+      "number": 23,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u0627\u0641\u0650\u0639\u064f",
+      "transliteration": "Ар-Рафи",
+      "translation": "Возвышающий",
+      "meaning": "Тот, кто возвышает верующих и дает им высокие степени.",
+      "audio": "rafi.mp3"
+    },
+    {
+      "number": 24,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0639\u0650\u0632\u064f\u0651",
+      "transliteration": "Аль-Муизз",
+      "translation": "Дарующий честь",
+      "meaning": "Тот, кто дает честь и власть тому, кому пожелает.",
+      "audio": "muizz.mp3"
+    },
+    {
+      "number": 25,
+      "name": "\u0627\u0644\u0645\u064f\u0630\u0650\u0644\u064f\u0651",
+      "transliteration": "Аль-Музилл",
+      "translation": "Принижающий",
+      "meaning": "Тот, кто отнимает власть и унижает того, кого пожелает.",
+      "audio": "mudhill.mp3"
+    },
+    {
+      "number": 26,
+      "name": "\u0627\u0644\u0633\u064e\u0651\u0645\u0650\u064a\u0639\u064f",
+      "transliteration": "Ас-Сами",
+      "translation": "Всеслышащий",
+      "meaning": "Тот, кто слышит все, даже самый тихий шепот.",
+      "audio": "sami.mp3"
+    },
+    {
+      "number": 27,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u0635\u0650\u064a\u0631\u064f",
+      "transliteration": "Аль-Басир",
+      "translation": "Всевидящий",
+      "meaning": "Тот, кто видит все, явное и скрытое.",
+      "audio": "basir.mp3"
+    },
+    {
+      "number": 28,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u0643\u064e\u0645\u064f",
+      "transliteration": "Аль-Хакам",
+      "translation": "Судья",
+      "meaning": "Тот, кто судит справедливо и чье решение окончательно.",
+      "audio": "hakam.mp3"
+    },
+    {
+      "number": 29,
+      "name": "\u0627\u0644\u0652\u0639\u064e\u062f\u0652\u0644\u064f",
+      "transliteration": "Аль-Адль",
+      "translation": "Справедливый",
+      "meaning": "Тот, кто абсолютно справедлив и никого не притесняет.",
+      "audio": "adl.mp3"
+    },
+    {
+      "number": 30,
+      "name": "\u0627\u0644\u0644\u064e\u0651\u0637\u0650\u064a\u0641\u064f",
+      "transliteration": "Аль-Латиф",
+      "translation": "Доброжелательный",
+      "meaning": "Тот, кто добр к рабам и знает мельчайшие детали.",
+      "audio": "latif.mp3"
+    },
+    {
+      "number": 31,
+      "name": "\u0627\u0644\u0652\u062e\u064e\u0628\u0650\u064a\u0631\u064f",
+      "transliteration": "Аль-Хабир",
+      "translation": "Сведущий",
+      "meaning": "Тот, кто осведомлен обо всем и от кого ничто не скрыто.",
+      "audio": "khabir.mp3"
+    },
+    {
+      "number": 32,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u0644\u0650\u064a\u0645\u064f",
+      "transliteration": "Аль-Халим",
+      "translation": "Сдержанный",
+      "meaning": "Тот, кто не спешит наказывать и терпелив.",
+      "audio": "halim.mp3"
+    },
+    {
+      "number": 33,
+      "name": "\u0627\u0644\u0652\u0639\u064e\u0638\u0650\u064a\u0645\u064f",
+      "transliteration": "Аль-Азим",
+      "translation": "Великий",
+      "meaning": "Тот, чье величие неизмеримо.",
+      "audio": "azim.mp3"
+    },
+    {
+      "number": 34,
+      "name": "\u0627\u0644\u0652\u063a\u064e\u0641\u064f\u0648\u0631\u064f",
+      "transliteration": "Аль-Гафур",
+      "translation": "Всепрощающий",
+      "meaning": "Тот, кто прощает грехи и покрывает позор.",
+      "audio": "ghafur.mp3"
+    },
+    {
+      "number": 35,
+      "name": "\u0627\u0644\u0634\u064e\u0651\u0643\u064f\u0648\u0631\u064f",
+      "transliteration": "Аш-Шакур",
+      "translation": "Благодарный",
+      "meaning": "Тот, кто щедро вознаграждает за малые деяния.",
+      "audio": "shakur.mp3"
+    },
+    {
+      "number": 36,
+      "name": "\u0627\u0644\u0652\u0639\u064e\u0644\u0650\u064a\u064f\u0651",
+      "transliteration": "Аль-Али",
+      "translation": "Всевышний",
+      "meaning": "Тот, кто возвышен над всем.",
+      "audio": "ali.mp3"
+    },
+    {
+      "number": 37,
+      "name": "\u0627\u0644\u0652\u0643\u064e\u0628\u0650\u064a\u0631\u064f",
+      "transliteration": "Аль-Кабир",
+      "translation": "Большой",
+      "meaning": "Тот, кто больше всего, что можно вообразить.",
+      "audio": "kabir.mp3"
+    },
+    {
+      "number": 38,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u0641\u0650\u064a\u0638\u064f",
+      "transliteration": "Аль-Хафиз",
+      "translation": "Хранитель",
+      "meaning": "Тот, кто защищает и сохраняет все.",
+      "audio": "hafiz.mp3"
+    },
+    {
+      "number": 39,
+      "name": "\u0627\u0644\u0645\u064f\u0642\u064a\u0650\u062a",
+      "transliteration": "Аль-Мукит",
+      "translation": "Обеспечивающий",
+      "meaning": "Тот, кто дает силу и пропитание каждому творению.",
+      "audio": "muqit.mp3"
+    },
+    {
+      "number": 40,
+      "name": "\u0627\u0644\u0652\u062d\u0633\u0650\u064a\u0628\u064f",
+      "transliteration": "Аль-Хасиб",
+      "translation": "Считающий",
+      "meaning": "Тот, кто ведет счет и достаточен для Своих рабов.",
+      "audio": "hasib.mp3"
+    },
+    {
+      "number": 41,
+      "name": "\u0627\u0644\u0652\u062c\u064e\u0644\u0650\u064a\u0644\u064f",
+      "transliteration": "Аль-Джалиль",
+      "translation": "Величественный",
+      "meaning": "Тот, кто обладает величием и могуществом.",
+      "audio": "jalil.mp3"
+    },
+    {
+      "number": 42,
+      "name": "\u0627\u0644\u0652\u0643\u064e\u0631\u0650\u064a\u0645\u064f",
+      "transliteration": "Аль-Карим",
+      "translation": "Щедрый",
+      "meaning": "Тот, кто бесконечно щедр и благороден.",
+      "audio": "karim.mp3"
+    },
+    {
+      "number": 43,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u0642\u0650\u064a\u0628\u064f",
+      "transliteration": "Ар-Ракиб",
+      "translation": "Наблюдающий",
+      "meaning": "Тот, кто наблюдает за всем и от кого ничто не ускользает.",
+      "audio": "raqib.mp3"
+    },
+    {
+      "number": 44,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u062c\u0650\u064a\u0628\u064f",
+      "transliteration": "Аль-Муджиб",
+      "translation": "Отзывчивый",
+      "meaning": "Тот, кто отвечает на молитвы тех, кто взывает к Нему.",
+      "audio": "mujib.mp3"
+    },
+    {
+      "number": 45,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0627\u0633\u0650\u0639\u064f",
+      "transliteration": "Аль-Васи",
+      "translation": "Всеобъемлющий",
+      "meaning": "Тот, чье знание, милость и могущество объемлют все.",
+      "audio": "wasi.mp3"
+    },
+    {
+      "number": 46,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u0643\u0650\u064a\u0645\u064f",
+      "transliteration": "Аль-Хаким",
+      "translation": "Мудрый",
+      "meaning": "Тот, кто делает все с мудростью и целью.",
+      "audio": "hakim.mp3"
+    },
+    {
+      "number": 47,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u062f\u064f\u0648\u062f\u064f",
+      "transliteration": "Аль-Вадуд",
+      "translation": "Любящий",
+      "meaning": "Тот, кто любит Своих праведных рабов и любим ими.",
+      "audio": "wadud.mp3"
+    },
+    {
+      "number": 48,
+      "name": "\u0627\u0644\u0652\u0645\u064e\u062c\u0650\u064a\u062f\u064f",
+      "transliteration": "Аль-Маджид",
+      "translation": "Славный",
+      "meaning": "Тот, кто восхваляем и обладает совершенной честью.",
+      "audio": "majeed.mp3"
+    },
+    {
+      "number": 49,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u0627\u0639\u0650\u062b\u064f",
+      "transliteration": "Аль-Баис",
+      "translation": "Воскрешающий",
+      "meaning": "Тот, кто воскресит людей после смерти.",
+      "audio": "baith.mp3"
+    },
+    {
+      "number": 50,
+      "name": "\u0627\u0644\u0634\u064e\u0651\u0647\u0650\u064a\u062f\u064f",
+      "transliteration": "Аш-Шахид",
+      "translation": "Свидетель",
+      "meaning": "Тот, кто свидетельствует обо всем и от кого ничто не скрыто.",
+      "audio": "shahid.mp3"
+    },
+    {
+      "number": 51,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u0642\u064f\u0651",
+      "transliteration": "Аль-Хакк",
+      "translation": "Истина",
+      "meaning": "Тот, кто является Абсолютной Истиной и чье существование неоспоримо.",
+      "audio": "haqq.mp3"
+    },
+    {
+      "number": 52,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0643\u0650\u064a\u0644\u064f",
+      "transliteration": "Аль-Вакиль",
+      "translation": "Попечитель",
+      "meaning": "Тот, на кого полагаются и кто заботится о делах наилучшим образом.",
+      "audio": "wakil.mp3"
+    },
+    {
+      "number": 53,
+      "name": "\u0627\u0644\u0652\u0642\u064e\u0648\u0650\u064a\u064f\u0651",
+      "transliteration": "Аль-Кави",
+      "translation": "Сильный",
+      "meaning": "Тот, кто обладает совершенной силой.",
+      "audio": "qawi.mp3"
+    },
+    {
+      "number": 54,
+      "name": "\u0627\u0644\u0652\u0645\u064e\u062a\u0650\u064a\u0646\u064f",
+      "transliteration": "Аль-Матин",
+      "translation": "Непоколебимый",
+      "meaning": "Тот, чья сила непоколебима.",
+      "audio": "matin.mp3"
+    },
+    {
+      "number": 55,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0644\u0650\u064a\u064f\u0651",
+      "transliteration": "Аль-Вали",
+      "translation": "Покровитель",
+      "meaning": "Друг и Покровитель верующих.",
+      "audio": "waliy.mp3"
+    },
+    {
+      "number": 56,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u0645\u0650\u064a\u062f\u064f",
+      "transliteration": "Аль-Хамид",
+      "translation": "Достохвальный",
+      "meaning": "Тот, кому принадлежит вся хвала.",
+      "audio": "hamid.mp3"
+    },
+    {
+      "number": 57,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u062d\u0652\u0635\u0650\u064a",
+      "transliteration": "Аль-Мухси",
+      "translation": "Учитывающий",
+      "meaning": "Тот, кто знает количество и меру всего.",
+      "audio": "muhsi.mp3"
+    },
+    {
+      "number": 58,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0628\u0652\u062f\u0650\u0626\u064f",
+      "transliteration": "Аль-Мубди",
+      "translation": "Начинающий",
+      "meaning": "Тот, кто создает с самого начала.",
+      "audio": "mubdi.mp3"
+    },
+    {
+      "number": 59,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0639\u0650\u064a\u062f\u064f",
+      "transliteration": "Аль-Муид",
+      "translation": "Возвращающий",
+      "meaning": "Тот, кто возвращает жизнь после смерти.",
+      "audio": "muid.mp3"
+    },
+    {
+      "number": 60,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u062d\u0652\u064a\u0650\u064a",
+      "transliteration": "Аль-Мухйи",
+      "translation": "Оживляющий",
+      "meaning": "Тот, кто дает жизнь.",
+      "audio": "muhyi.mp3"
+    },
+    {
+      "number": 61,
+      "name": "\u0627\u064e\u0644\u0652\u0645\u064f\u0645\u0650\u064a\u062a\u064f",
+      "transliteration": "Аль-Мумит",
+      "translation": "Умерщвляющий",
+      "meaning": "Тот, кто дает смерть.",
+      "audio": "mumit.mp3"
+    },
+    {
+      "number": 62,
+      "name": "\u0627\u0644\u0652\u062d\u064e\u064a\u064f\u0651",
+      "transliteration": "Аль-Хайй",
+      "translation": "Живой",
+      "meaning": "Тот, кто вечно жив.",
+      "audio": "hayy.mp3"
+    },
+    {
+      "number": 63,
+      "name": "\u0627\u0644\u0652\u0642\u064e\u064a\u064f\u0651\u0648\u0645\u064f",
+      "transliteration": "Аль-Кайюм",
+      "translation": "Самосущий",
+      "meaning": "Тот, кто зависит только от Себя и от кого зависит все.",
+      "audio": "qayyum.mp3"
+    },
+    {
+      "number": 64,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0627\u062c\u0650\u062f\u064f",
+      "transliteration": "Аль-Ваджид",
+      "translation": "Богатый",
+      "meaning": "Тот, кто обладает всем и кому ничего не нужно.",
+      "audio": "wajid.mp3"
+    },
+    {
+      "number": 65,
+      "name": "\u0627\u0644\u0652\u0645\u064e\u0627\u062c\u0650\u062f\u064f",
+      "transliteration": "Аль-Маджид",
+      "translation": "Благородный",
+      "meaning": "Тот, кто благороден и велик.",
+      "audio": "majid.mp3"
+    },
+    {
+      "number": 66,
+      "name": "\u0627\u0644\u0652\u0648\u0627\u062d\u0650\u062f\u064f",
+      "transliteration": "Аль-Вахид",
+      "translation": "Единственный",
+      "meaning": "Тот, кто Един в Своей сущности и атрибутах.",
+      "audio": "wahid.mp3"
+    },
+    {
+      "number": 67,
+      "name": "\u0627\u064e\u0644\u0627\u064e\u062d\u064e\u062f\u064f",
+      "transliteration": "Аль-Ахад",
+      "translation": "Единый",
+      "meaning": "Тот, кто уникален и неделим.",
+      "audio": "ahad.mp3"
+    },
+    {
+      "number": 68,
+      "name": "\u0627\u0644\u0635\u064e\u0651\u0645\u064e\u062f\u064f",
+      "transliteration": "Ас-Самад",
+      "translation": "Вечный",
+      "meaning": "Тот, к кому все обращаются, и Он не нуждается ни в ком.",
+      "audio": "samad.mp3"
+    },
+    {
+      "number": 69,
+      "name": "\u0627\u0644\u0652\u0642\u064e\u0627\u062f\u0650\u0631\u064f",
+      "transliteration": "Аль-Кадир",
+      "translation": "Могучий",
+      "meaning": "Тот, кто может сделать все, что пожелает.",
+      "audio": "qadir.mp3"
+    },
+    {
+      "number": 70,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0642\u0652\u062a\u064e\u062f\u0650\u0631\u064f",
+      "transliteration": "Аль-Муктадир",
+      "translation": "Всемогущий",
+      "meaning": "Тот, чье могущество абсолютно.",
+      "audio": "muqtadir.mp3"
+    },
+    {
+      "number": 71,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0642\u064e\u062f\u0650\u0651\u0645\u064f",
+      "transliteration": "Аль-Мукаддим",
+      "translation": "Выдвигающий вперед",
+      "meaning": "Тот, кто выдвигает вперед того, кого пожелает.",
+      "audio": "muqaddim.mp3"
+    },
+    {
+      "number": 72,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0624\u064e\u062e\u0650\u0651\u0631\u064f",
+      "transliteration": "Аль-Муаххир",
+      "translation": "Отодвигающий",
+      "meaning": "Тот, кто задерживает того, кого пожелает.",
+      "audio": "muakhkhir.mp3"
+    },
+    {
+      "number": 73,
+      "name": "\u0627\u0644\u0623\u0648\u064e\u0651\u0644\u064f",
+      "transliteration": "Аль-Авваль",
+      "translation": "Первый",
+      "meaning": "Тот, у кого нет начала.",
+      "audio": "awwal.mp3"
+    },
+    {
+      "number": 74,
+      "name": "\u0627\u0644\u0622\u062e\u0650\u0631\u064f",
+      "transliteration": "Аль-Ахир",
+      "translation": "Последний",
+      "meaning": "Тот, у кого нет конца.",
+      "audio": "akhir.mp3"
+    },
+    {
+      "number": 75,
+      "name": "\u0627\u0644\u0638\u064e\u0651\u0627\u0647\u0650\u0631\u064f",
+      "transliteration": "Аз-Захир",
+      "translation": "Явный",
+      "meaning": "Тот, чье существование очевидно через Его творения.",
+      "audio": "zahir.mp3"
+    },
+    {
+      "number": 76,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u0627\u0637\u0650\u0646\u064f",
+      "transliteration": "Аль-Батин",
+      "translation": "Скрытый",
+      "meaning": "Тот, кто скрыт от взора и знает тайны.",
+      "audio": "batin.mp3"
+    },
+    {
+      "number": 77,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0627\u0644\u0650\u064a",
+      "transliteration": "Аль-Вали",
+      "translation": "Правитель",
+      "meaning": "Тот, кто управляет всем.",
+      "audio": "wali.mp3"
+    },
+    {
+      "number": 78,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u062a\u064e\u0639\u064e\u0627\u0644\u0650\u064a",
+      "transliteration": "Аль-Мутаали",
+      "translation": "Высочайший",
+      "meaning": "Тот, кто выше любых недостатков.",
+      "audio": "muta_ali.mp3"
+    },
+    {
+      "number": 79,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u0631\u064f\u0651",
+      "transliteration": "Аль-Барр",
+      "translation": "Благостный",
+      "meaning": "Тот, кто является источником всего добра.",
+      "audio": "barr.mp3"
+    },
+    {
+      "number": 80,
+      "name": "\u0627\u0644\u062a\u064e\u0651\u0648\u064e\u0627\u0628\u064f",
+      "transliteration": "Ат-Тавваб",
+      "translation": "Принимающий покаяние",
+      "meaning": "Тот, кто принимает покаяние рабов.",
+      "audio": "tawwab.mp3"
+    },
+    {
+      "number": 81,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0646\u0652\u062a\u064e\u0642\u0650\u0645\u064f",
+      "transliteration": "Аль-Мунтаким",
+      "translation": "Мстящий",
+      "meaning": "Тот, кто наказывает злодеев по справедливости.",
+      "audio": "muntaqim.mp3"
+    },
+    {
+      "number": 82,
+      "name": "\u0627\u0644\u0639\u064e\u0641\u064f\u0648\u064f\u0651",
+      "transliteration": "Аль-Афувв",
+      "translation": "Прощающий",
+      "meaning": "Тот, кто прощает и стирает грехи.",
+      "audio": "afuw.mp3"
+    },
+    {
+      "number": 83,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u0624\u064f\u0648\u0641\u064f",
+      "transliteration": "Ар-Рауф",
+      "translation": "Сострадательный",
+      "meaning": "Тот, кто мягок и милосерден.",
+      "audio": "rauf.mp3"
+    },
+    {
+      "number": 84,
+      "name": "\u0645\u064e\u0627\u0644\u0650\u0643\u064f \u0627\u0644\u0652\u0645\u064f\u0644\u0652\u0643\u0650",
+      "transliteration": "Малик-уль-Мульк",
+      "translation": "Владыка Царствия",
+      "meaning": "Абсолютный владелец всего.",
+      "audio": "malik_ul_mulk.mp3"
+    },
+    {
+      "number": 85,
+      "name": "\u0630\u064f\u0648\u0627\u0644\u0652\u062c\u064e\u0644\u0627\u064e\u0644\u0650 \u0648\u064e\u0627\u0644\u0625\u0643\u0652\u0631\u064e\u0627\u0645\u0650",
+      "transliteration": "Зуль-Джаляли валь-Икрам",
+      "translation": "Обладатель Величия и Щедрости",
+      "meaning": "Тот, кто обладает величием и честью.",
+      "audio": "dhu_l_jalali_wal_ikram.mp3"
+    },
+    {
+      "number": 86,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u0642\u0652\u0633\u0650\u0637\u064f",
+      "transliteration": "Аль-Муксит",
+      "translation": "Справедливый",
+      "meaning": "Тот, кто устанавливает справедливость.",
+      "audio": "muqsit.mp3"
+    },
+    {
+      "number": 87,
+      "name": "\u0627\u0644\u0652\u062c\u064e\u0627\u0645\u0650\u0639\u064f",
+      "transliteration": "Аль-Джами",
+      "translation": "Собирающий",
+      "meaning": "Тот, кто соберет людей в Судный день.",
+      "audio": "jami.mp3"
+    },
+    {
+      "number": 88,
+      "name": "\u0627\u0644\u0652\u063a\u064e\u0646\u0650\u064a\u064f\u0651",
+      "transliteration": "Аль-Гани",
+      "translation": "Богатый",
+      "meaning": "Тот, кто независим и богат.",
+      "audio": "ghaniy.mp3"
+    },
+    {
+      "number": 89,
+      "name": "\u0627\u0644\u0652\u0645\u064f\u063a\u0652\u0646\u0650\u064a",
+      "transliteration": "Аль-Мугни",
+      "translation": "Обогащающий",
+      "meaning": "Тот, кто дает богатство тому, кому пожелает.",
+      "audio": "mughni.mp3"
+    },
+    {
+      "number": 90,
+      "name": "\u0627\u064e\u0644\u0652\u0645\u064e\u0627\u0646\u0650\u0639\u064f",
+      "transliteration": "Аль-Мани",
+      "translation": "Предотвращающий",
+      "meaning": "Тот, кто предотвращает зло и вред.",
+      "audio": "mani.mp3"
+    },
+    {
+      "number": 91,
+      "name": "\u0627\u0644\u0636\u064e\u0651\u0627\u0631\u064e\u0651",
+      "transliteration": "Ад-Дарр",
+      "translation": "Вредящий",
+      "meaning": "Тот, кто дает испытания и вред согласно Своей мудрости.",
+      "audio": "darr.mp3"
+    },
+    {
+      "number": 92,
+      "name": "\u0627\u0644\u0646\u064e\u0651\u0627\u0641\u0650\u0639\u064f",
+      "transliteration": "Ан-Нафи",
+      "translation": "Благотворящий",
+      "meaning": "Тот, кто дает пользу и добро.",
+      "audio": "nafi.mp3"
+    },
+    {
+      "number": 93,
+      "name": "\u0627\u0644\u0646\u064f\u0651\u0648\u0631\u064f",
+      "transliteration": "Ан-Нур",
+      "translation": "Свет",
+      "meaning": "Тот, кто освещает небеса и землю.",
+      "audio": "nur.mp3"
+    },
+    {
+      "number": 94,
+      "name": "\u0627\u0644\u0652\u0647\u064e\u0627\u062f\u0650\u064a",
+      "transliteration": "Аль-Хади",
+      "translation": "Наставляющий",
+      "meaning": "Тот, кто наставляет на прямой путь.",
+      "audio": "hadi.mp3"
+    },
+    {
+      "number": 95,
+      "name": "\u0627\u0644\u0652\u0628\u064e\u062f\u0650\u064a\u0639\u064f",
+      "transliteration": "Аль-Бади",
+      "translation": "Первосоздатель",
+      "meaning": "Тот, кто создает без предшествующего примера.",
+      "audio": "badi.mp3"
+    },
+    {
+      "number": 96,
+      "name": "\u0627\u064e\u0644\u0652\u0628\u064e\u0627\u0642\u0650\u064a",
+      "transliteration": "Аль-Баки",
+      "translation": "Вечный",
+      "meaning": "Тот, кто остается навсегда.",
+      "audio": "baqi.mp3"
+    },
+    {
+      "number": 97,
+      "name": "\u0627\u0644\u0652\u0648\u064e\u0627\u0631\u0650\u062b\u064f",
+      "transliteration": "Аль-Варис",
+      "translation": "Наследник",
+      "meaning": "Тот, кто остается, когда все исчезает.",
+      "audio": "warith.mp3"
+    },
+    {
+      "number": 98,
+      "name": "\u0627\u0644\u0631\u064e\u0651\u0634\u0650\u064a\u062f\u064f",
+      "transliteration": "Ар-Рашид",
+      "translation": "Правильный",
+      "meaning": "Тот, кто направляет к добру и истине.",
+      "audio": "rashid.mp3"
+    },
+    {
+      "number": 99,
+      "name": "\u0627\u0644\u0635\u064e\u0651\u0628\u064f\u0648\u0631\u064f",
+      "transliteration": "Ас-Сабур",
+      "translation": "Терпеливый",
+      "meaning": "Тот, кто бесконечно терпелив.",
+      "audio": "sabur.mp3"
+    }
+  ],
+  "total": 99,
+  "language": "Russian",
+  "language_code": "ru",
+  "title": "99 Имен Аллаха",
+  "arabic_title": "\u0623\u0633\u0645\u0627\u0621 \u0627\u0644\u0644\u0647 \u0627\u0644\u062d\u0633\u0646\u0649",
+  "description": "Краткое изложение 99 имен Аллаха (Асма уль-Хусна) согласно исламской традиции.",
+  "recitation_benefits": "Чтение и понимание этих имен приближает верующего к Аллаху и является формой поклонения.",
+  "hadith": "Пророк Мухаммад (мир ему и благословение) сказал: \"У Аллаха девяносто девять имен, сто без одного. Тот, кто запомнит их (и будет действовать в соответствии с ними), войдет в Рай.\" (Бухари и Муслим)"
+}
