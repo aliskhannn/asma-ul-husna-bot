@@ -12,9 +12,9 @@ import (
 )
 
 type NameUseCase interface {
-	GetNameByNumber(ctx context.Context, number int) (entities.Name, error)
-	GetRandomName(ctx context.Context) (entities.Name, error)
-	GetAllNames(ctx context.Context) ([]entities.Name, error)
+	GetNameByNumber(ctx context.Context, number int) entities.Name
+	GetRandomName(ctx context.Context) entities.Name
+	GetAllNames(ctx context.Context) []entities.Name
 }
 
 type Handler struct {
@@ -49,27 +49,43 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	if update.Message == nil {
 		return
 	}
-	if !update.Message.IsCommand() {
-		return
-	}
 
 	chatID := update.Message.Chat.ID
 	msg := tgbotapi.NewMessage(chatID, "")
 	msg.ParseMode = tgbotapi.ModeHTML
 
-	switch update.Message.Command() {
-	case "start":
-		msg.Text = msgWelcome
+	if update.Message.IsCommand() {
+		switch update.Message.Command() {
+		case "start":
+			msg.Text = msgWelcome
+			h.send(msg)
 
-	case "name":
-		n, err := strconv.Atoi(update.Message.CommandArguments())
+		case "random":
+			msg, audio := h.buildNameResponse(ctx, h.nameUseCase.GetRandomName, chatID)
+			h.send(msg)
+			if audio != nil {
+				h.send(*audio)
+			}
+
+		default:
+			msg.Text = msgUnknownCommand
+			h.send(msg)
+		}
+	} else {
+		n, err := strconv.Atoi(update.Message.Text)
 		if err != nil {
 			msg.Text = msgIncorrectNameNumber
 			h.send(msg)
 			return
 		}
 
-		msg, audio := h.buildNameResponse(ctx, func(ctx context.Context) (entities.Name, error) {
+		if n < 1 || n > 99 {
+			msg.Text = msgOutOfRangeNumber
+			h.send(msg)
+			return
+		}
+
+		msg, audio := h.buildNameResponse(ctx, func(ctx context.Context) entities.Name {
 			return h.nameUseCase.GetNameByNumber(ctx, n)
 		}, chatID)
 
@@ -77,32 +93,17 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		if audio != nil {
 			h.send(*audio)
 		}
-
-	case "random":
-		msg, audio := h.buildNameResponse(ctx, h.nameUseCase.GetRandomName, chatID)
-		h.send(msg)
-		if audio != nil {
-			h.send(*audio)
-		}
-
-	default:
-		msg.Text = msgUnknownCommand
-		h.send(msg)
 	}
 }
 
 func (h *Handler) buildNameResponse(
 	ctx context.Context,
-	get func(ctx2 context.Context) (entities.Name, error), chatID int64,
+	get func(ctx2 context.Context) entities.Name, chatID int64,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig) {
 	msg := tgbotapi.NewMessage(chatID, "")
 	msg.ParseMode = tgbotapi.ModeHTML
 
-	name, err := get(ctx)
-	if err != nil {
-		msg.Text = msgFailedToGetName
-		return msg, nil
-	}
+	name := get(ctx)
 
 	msg.Text = formatName(name)
 

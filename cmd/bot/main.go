@@ -26,6 +26,26 @@ func main() {
 		log.Panic(err)
 	}
 
+	commands := []tgbotapi.BotCommand{
+		{
+			Command:     "start",
+			Description: "Запустить бота",
+		},
+		{
+			Command:     "random",
+			Description: "Получить случайное имя",
+		},
+		{
+			Command:     "help",
+			Description: "Помощь",
+		},
+	}
+
+	_, err = bot.Request(tgbotapi.NewSetMyCommands(commands...))
+	if err != nil {
+		log.Panic(err)
+	}
+
 	bot.Debug = true
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
