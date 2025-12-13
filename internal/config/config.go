@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -36,11 +35,6 @@ func (n DB) DSN() string {
 }
 
 func Load() (*Config, error) {
-	err := godotenv.Load()
-	if err != nil {
-		return nil, fmt.Errorf("loading .env file: %w", err)
-	}
-
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")

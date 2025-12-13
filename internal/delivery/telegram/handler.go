@@ -12,9 +12,9 @@ import (
 )
 
 type NameUseCase interface {
-	GetNameByNumber(ctx context.Context, number int) entities.Name
-	GetRandomName(ctx context.Context) entities.Name
-	GetAllNames(ctx context.Context) []entities.Name
+	GetNameByNumber(ctx context.Context, number int) (entities.Name, error)
+	GetRandomName(ctx context.Context) (entities.Name, error)
+	GetAllNames(ctx context.Context) ([]entities.Name, error)
 }
 
 type UserUseCase interface {
@@ -66,7 +66,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			msg.Text = msgWelcome
 			h.send(msg)
 
-			user := update.ChatMember.From
+			user := update.Message.From
 			err := h.userUseCase.EnsureUser(ctx, user.ID, user.FirstName, user.LastName, user.UserName, user.LanguageCode)
 			if err != nil {
 				log.Println(err)
@@ -99,7 +99,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			return
 		}
 
-		msg, audio := h.buildNameResponse(ctx, func(ctx context.Context) entities.Name {
+		msg, audio := h.buildNameResponse(ctx, func(ctx context.Context) (entities.Name, error) {
 			return h.nameUseCase.GetNameByNumber(ctx, n)
 		}, chatID)
 
@@ -112,12 +112,16 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 func (h *Handler) buildNameResponse(
 	ctx context.Context,
-	get func(ctx2 context.Context) entities.Name, chatID int64,
+	get func(ctx2 context.Context) (entities.Name, error), chatID int64,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig) {
 	msg := tgbotapi.NewMessage(chatID, "")
 	msg.ParseMode = tgbotapi.ModeHTML
 
-	name := get(ctx)
+	name, err := get(ctx)
+	if err != nil {
+		msg.Text = msgFailedToGetName
+		return msg, nil
+	}
 
 	msg.Text = formatName(name)
 
