@@ -13,21 +13,21 @@ type NameRepository interface {
 }
 
 type NameUseCase struct {
-	nameRepository NameRepository
+	repo NameRepository
 }
 
-func NewNameUseCase(nameRepository NameRepository) *NameUseCase {
-	return &NameUseCase{nameRepository: nameRepository}
+func NewNameUseCase(repo NameRepository) *NameUseCase {
+	return &NameUseCase{repo: repo}
 }
 
-func (r *NameUseCase) GetNameByNumber(ctx context.Context, number int) entities.Name {
-	return r.nameRepository.GetNameByNumber(ctx, number)
+func (uc *NameUseCase) GetNameByNumber(ctx context.Context, number int) entities.Name {
+	return uc.repo.GetNameByNumber(ctx, number)
 }
 
-func (r *NameUseCase) GetRandomName(ctx context.Context) entities.Name {
-	return r.nameRepository.GetRandomName(ctx)
+func (uc *NameUseCase) GetRandomName(ctx context.Context) entities.Name {
+	return uc.repo.GetRandomName(ctx)
 }
 
-func (r *NameUseCase) GetAllNames(ctx context.Context) []entities.Name {
-	return r.nameRepository.GetAllNames(ctx)
+func (uc *NameUseCase) GetAllNames(ctx context.Context) []entities.Name {
+	return uc.repo.GetAllNames(ctx)
 }
