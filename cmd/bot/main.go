@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/config"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/delivery/telegram"
@@ -26,6 +27,7 @@ func main() {
 		log.Panic(err)
 	}
 
+	// Set commands.
 	commands := []tgbotapi.BotCommand{
 		{
 			Command:     "start",
@@ -43,25 +45,41 @@ func main() {
 
 	_, err = bot.Request(tgbotapi.NewSetMyCommands(commands...))
 	if err != nil {
-		log.Panic(err)
+		log.Printf("Failed to set bot commands: %v", err)
 	}
 
 	bot.Debug = true
-
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	repo, err := repository.NewNameRepository("assets/data/names.json")
+	// Initialize repositories and use cases.
+	nameRepo, err := repository.NewNameRepository("assets/data/names.json")
 	if err != nil {
-		log.Panic(err)
+		log.Fatal(err)
 	}
 
-	uc := usecase.NewNameUseCase(repo)
+	poolConfig, err := pgxpool.ParseConfig(cfg.DB.DSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	dbpool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbpool.Close()
 
-	handler := telegram.NewHandler(bot, uc)
+	userRepo := repository.NewUserRepository(dbpool)
+
+	nameUC := usecase.NewNameUseCase(nameRepo)
+	userUC := usecase.NewUserUseCase(userRepo)
+
+	handler := telegram.NewHandler(bot, nameUC, userUC)
 	if err := handler.Run(ctx); err != nil {
 		log.Panic(err)
 	}
+
+	<-ctx.Done()
+	log.Println("shutdown signal received")
 }

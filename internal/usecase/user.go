@@ -21,8 +21,7 @@ func NewUserUseCase(repo UserRepository) *UserUseCase {
 func (uc *UserUseCase) EnsureUser(
 	ctx context.Context,
 	userID int64,
-	firstName string,
-	lastName string,
+	firstName, lastName string,
 	username string,
 	languageCode string,
 ) error {

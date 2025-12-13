@@ -1,0 +1,7 @@
+database:
+  host: "db"
+  port: "5432"
+  name: "husna_db"
+  ssl_mode: "disable"
+  max_connections: 20
+  connection_timeout: "30s"

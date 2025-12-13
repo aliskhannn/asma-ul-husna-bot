@@ -17,15 +17,21 @@ type NameUseCase interface {
 	GetAllNames(ctx context.Context) []entities.Name
 }
 
+type UserUseCase interface {
+	EnsureUser(ctx context.Context, userID int64, firstName, lastName string, username string, languageCode string) error
+}
+
 type Handler struct {
 	bot         *tgbotapi.BotAPI
 	nameUseCase NameUseCase
+	userUseCase UserUseCase
 }
 
-func NewHandler(bot *tgbotapi.BotAPI, nameUseCase NameUseCase) *Handler {
+func NewHandler(bot *tgbotapi.BotAPI, nameUseCase NameUseCase, userUseCase UserUseCase) *Handler {
 	return &Handler{
 		bot:         bot,
 		nameUseCase: nameUseCase,
+		userUseCase: userUseCase,
 	}
 }
 
@@ -59,6 +65,14 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		case "start":
 			msg.Text = msgWelcome
 			h.send(msg)
+
+			user := update.ChatMember.From
+			err := h.userUseCase.EnsureUser(ctx, user.ID, user.FirstName, user.LastName, user.UserName, user.LanguageCode)
+			if err != nil {
+				log.Println(err)
+			} else {
+				log.Printf("User %v has been created", user.UserName)
+			}
 
 		case "random":
 			msg, audio := h.buildNameResponse(ctx, h.nameUseCase.GetRandomName, chatID)
