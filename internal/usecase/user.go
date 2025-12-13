@@ -25,8 +25,7 @@ func (uc *UserUseCase) EnsureUser(
 	lastName string,
 	username string,
 	languageCode string,
-	isActive bool,
 ) error {
-	user := entities.NewUser(userID, firstName, lastName, username, languageCode, isActive)
+	user := entities.NewUser(userID, firstName, lastName, username, languageCode)
 	return uc.repo.EnsureUser(ctx, user)
 }

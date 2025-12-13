@@ -34,10 +34,14 @@ func (r *UserRepository) EnsureUser(ctx context.Context, user *entities.User) er
 
 func (r *UserRepository) saveUser(ctx context.Context, user *entities.User) error {
 	query := `
-	INSERT INTO users (id, first_name, last_name, username, language_code, is_active)
-	VALUES ($1, $2, $3, $4, $5, $6)
-`
-	_, err := r.db.Exec(ctx, query, user.ID, user.FirstName, user.LastName, user.Username, user.LanguageCode, user.IsActive)
+	INSERT INTO users (id, first_name, last_name, username, language_code)
+	VALUES ($1, $2, $3, $4, $5)
+	RETURNING is_active, created_at
+	
+	`
+	err := r.db.QueryRow(
+		ctx, query, user.ID, user.FirstName, user.LastName, user.Username, user.LanguageCode,
+	).Scan(&user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save user: %w", err)
 	}

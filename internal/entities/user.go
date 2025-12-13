@@ -18,7 +18,6 @@ func NewUser(
 	LastName string,
 	Username string,
 	Language string,
-	IsActive bool,
 ) *User {
 	return &User{
 		ID:           ID,
@@ -26,7 +25,5 @@ func NewUser(
 		LastName:     LastName,
 		Username:     Username,
 		LanguageCode: Language,
-		IsActive:     IsActive,
-		CreatedAt:    time.Now(),
 	}
 }
