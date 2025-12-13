@@ -7,7 +7,8 @@ import (
 )
 
 type UserRepository interface {
-	EnsureUser(ctx context.Context, user *entities.User) error
+	SaveUser(ctx context.Context, user *entities.User) error
+	UserExists(ctx context.Context, userID int64) (bool, error)
 }
 
 type UserUseCase struct {
@@ -26,5 +27,14 @@ func (uc *UserUseCase) EnsureUser(
 	languageCode string,
 ) error {
 	user := entities.NewUser(userID, firstName, lastName, username, languageCode)
-	return uc.repo.EnsureUser(ctx, user)
+
+	exists, err := uc.repo.UserExists(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	
+	return uc.repo.SaveUser(ctx, user)
 }

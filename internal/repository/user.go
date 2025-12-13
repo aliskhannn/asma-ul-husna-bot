@@ -17,22 +17,7 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) EnsureUser(ctx context.Context, user *entities.User) error {
-	if user == nil {
-		return fmt.Errorf("user is nil")
-	}
-
-	exists, err := r.userExists(ctx, user.ID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return r.saveUser(ctx, user)
-	}
-	return nil
-}
-
-func (r *UserRepository) saveUser(ctx context.Context, user *entities.User) error {
+func (r *UserRepository) SaveUser(ctx context.Context, user *entities.User) error {
 	query := `
 	INSERT INTO users (id, first_name, last_name, username, language_code)
 	VALUES ($1, $2, $3, $4, $5)
@@ -49,7 +34,7 @@ func (r *UserRepository) saveUser(ctx context.Context, user *entities.User) erro
 	return nil
 }
 
-func (r *UserRepository) userExists(ctx context.Context, userID int64) (bool, error) {
+func (r *UserRepository) UserExists(ctx context.Context, userID int64) (bool, error) {
 	query := "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)"
 
 	var exists bool

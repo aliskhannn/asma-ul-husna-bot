@@ -3,8 +3,8 @@ package telegram
 import (
 	"context"
 	"log"
-	"path/filepath"
 	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -52,8 +52,26 @@ func (h *Handler) Run(ctx context.Context) error {
 }
 
 func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
+	if update.CallbackQuery != nil {
+		h.handleCallback(ctx, update.CallbackQuery)
+		return
+	}
+
 	if update.Message == nil {
 		return
+	}
+
+	user := update.Message.From
+	err := h.userUseCase.EnsureUser(
+		ctx,
+		user.ID,
+		user.FirstName,
+		user.LastName,
+		user.UserName,
+		user.LanguageCode,
+	)
+	if err != nil {
+		log.Println(err)
 	}
 
 	chatID := update.Message.Chat.ID
@@ -66,80 +84,100 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			msg.Text = msgWelcome
 			h.send(msg)
 
-			user := update.Message.From
-			err := h.userUseCase.EnsureUser(ctx, user.ID, user.FirstName, user.LastName, user.UserName, user.LanguageCode)
-			if err != nil {
-				log.Println(err)
-			} else {
-				log.Printf("User %v has been created", user.UserName)
-			}
-
 		case "random":
-			msg, audio := h.buildNameResponse(ctx, h.nameUseCase.GetRandomName, chatID)
+			msg, audio := buildNameResponse(ctx, h.nameUseCase.GetRandomName, chatID)
 			h.send(msg)
 			if audio != nil {
 				h.send(*audio)
 			}
 
+		case "all": // TODO: refactor
+			names, err := h.nameUseCase.GetAllNames(ctx)
+			if err != nil || len(names) == 0 {
+				msg.Text = msgFailedToGetName
+				h.send(msg)
+				return
+			}
+
+			idx := 0
+			name := names[idx]
+
+			text := processName(name)
+			msg.Text = text
+			msg.ReplyMarkup = buildNameKeyboard(idx, len(names))
+			h.send(msg)
+
 		default:
 			msg.Text = msgUnknownCommand
 			h.send(msg)
 		}
-	} else {
-		n, err := strconv.Atoi(update.Message.Text)
-		if err != nil {
-			msg.Text = msgIncorrectNameNumber
-			h.send(msg)
-			return
-		}
 
-		if n < 1 || n > 99 {
-			msg.Text = msgOutOfRangeNumber
-			h.send(msg)
-			return
-		}
-
-		msg, audio := h.buildNameResponse(ctx, func(ctx context.Context) (entities.Name, error) {
-			return h.nameUseCase.GetNameByNumber(ctx, n)
-		}, chatID)
-
-		h.send(msg)
-		if audio != nil {
-			h.send(*audio)
-		}
+		return
 	}
-}
 
-func (h *Handler) buildNameResponse(
-	ctx context.Context,
-	get func(ctx2 context.Context) (entities.Name, error), chatID int64,
-) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig) {
-	msg := tgbotapi.NewMessage(chatID, "")
-	msg.ParseMode = tgbotapi.ModeHTML
-
-	name, err := get(ctx)
+	// TODO: refactor
+	n, err := strconv.Atoi(update.Message.Text)
 	if err != nil {
-		msg.Text = msgFailedToGetName
-		return msg, nil
+		msg.Text = msgIncorrectNameNumber
+		h.send(msg)
+		return
 	}
 
-	msg.Text = formatName(name)
-
-	if name.Audio == "" {
-		return msg, nil
+	if n < 1 || n > 99 {
+		msg.Text = msgOutOfRangeNumber
+		h.send(msg)
+		return
 	}
 
-	audio := h.newAudio(name, chatID)
-	return msg, audio
+	msg, audio := buildNameResponse(ctx, func(ctx context.Context) (entities.Name, error) {
+		return h.nameUseCase.GetNameByNumber(ctx, n)
+	}, chatID)
+
+	h.send(msg)
+	if audio != nil {
+		h.send(*audio)
+	}
 }
 
-func (h *Handler) newAudio(name entities.Name, chatID int64) *tgbotapi.AudioConfig {
-	path := filepath.Join("assets", "audio", name.Audio)
+func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
+	data := cb.Data
 
-	a := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(path))
-	a.Caption = name.Transliteration
+	if !strings.HasPrefix(data, "name:") {
+		return
+	}
 
-	return &a
+	idxStr := strings.TrimPrefix(data, "name:")
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil || idx < 0 || idx > 98 {
+		log.Printf("invalid idx in callback: %s", data)
+		return
+	}
+
+	names, err := h.nameUseCase.GetAllNames(ctx)
+	if err != nil {
+		log.Printf("failed to get all names: %v", err)
+		return
+	}
+	if idx >= len(names) {
+		log.Printf("idx out of range: %d (len=%d)", idx, len(names))
+		return
+	}
+
+	name := names[idx]
+	text := processName(name)
+
+	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ParseMode = tgbotapi.ModeHTML
+	kb := buildNameKeyboard(idx, len(names))
+	edit.ReplyMarkup = &kb
+
+	h.send(edit)
+
+	// Remove the user's "clock".
+	answer := tgbotapi.NewCallback(cb.ID, "")
+	if _, err := h.bot.Request(answer); err != nil {
+		log.Println("callback answer error:", err)
+	}
 }
 
 func (h *Handler) send(c tgbotapi.Chattable) {

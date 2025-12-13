@@ -1,7 +1,11 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
+	"path/filepath"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/entities"
 )
@@ -33,9 +37,14 @@ var (
 	msgUnknownCommand      = "Неизвестная команда. Введите номер имени или используйте /random или /help."
 )
 
+var (
+	prevButtonData = "◀️ Назад"
+	nextButtonData = "Вперёд ▶"
+)
+
 const lrm = "\u200E"
 
-func formatName(n entities.Name) string {
+func processName(n entities.Name) string {
 	return fmt.Sprintf(
 		"%s<b>%d. %s</b>\n\n<b>Транслитерация:</b>  %s\n<b>Перевод:</b> %s\n<b>Значение:</b> %s",
 		lrm,
@@ -45,4 +54,56 @@ func formatName(n entities.Name) string {
 		n.Translation,
 		n.Meaning,
 	)
+}
+
+func buildNameResponse(
+	ctx context.Context,
+	get func(ctx2 context.Context) (entities.Name, error), chatID int64,
+) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig) {
+	msg := tgbotapi.NewMessage(chatID, "")
+	msg.ParseMode = tgbotapi.ModeHTML
+
+	name, err := get(ctx)
+	if err != nil {
+		msg.Text = msgFailedToGetName
+		return msg, nil
+	}
+
+	msg.Text = processName(name)
+
+	if name.Audio == "" {
+		return msg, nil
+	}
+
+	audio := buildNameAudio(name, chatID)
+	return msg, audio
+}
+
+func buildNameKeyboard(idx, total int) tgbotapi.InlineKeyboardMarkup {
+	prevData := fmt.Sprintf("name:%d", idx-1)
+	nextData := fmt.Sprintf("name:%d", idx+1)
+
+	var row []tgbotapi.InlineKeyboardButton
+
+	if idx > 0 {
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(prevButtonData, prevData))
+	}
+	if idx < total-1 {
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(nextButtonData, nextData))
+	}
+
+	if len(row) == 0 {
+		return tgbotapi.NewInlineKeyboardMarkup()
+	}
+
+	return tgbotapi.NewInlineKeyboardMarkup(row)
+}
+
+func buildNameAudio(name entities.Name, chatID int64) *tgbotapi.AudioConfig {
+	path := filepath.Join("assets", "audio", name.Audio)
+
+	a := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(path))
+	a.Caption = name.Transliteration
+
+	return &a
 }

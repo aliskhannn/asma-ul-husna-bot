@@ -34,6 +34,10 @@ func main() {
 			Description: "Запустить бота",
 		},
 		{
+			Command:     "all",
+			Description: "Посмотреть все имена",
+		},
+		{
 			Command:     "random",
 			Description: "Получить случайное имя",
 		},
