@@ -75,8 +75,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	chatID := update.Message.Chat.ID
-	msg := tgbotapi.NewMessage(chatID, "")
-	msg.ParseMode = tgbotapi.ModeHTML
+	msg := newHTMLMessage(chatID, "")
 
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
@@ -91,7 +90,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 				h.send(*audio)
 			}
 
-		case "all": // TODO: refactor
+		case "all":
 			names, err := h.nameUseCase.GetAllNames(ctx)
 			if err != nil || len(names) == 0 {
 				msg.Text = msgFailedToGetName
@@ -99,12 +98,11 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 				return
 			}
 
-			idx := 0
-			name := names[idx]
+			page := 0
+			text, totalPages := buildNamesPage(names, page)
 
-			text := processName(name)
 			msg.Text = text
-			msg.ReplyMarkup = buildNameKeyboard(idx, len(names))
+			msg.ReplyMarkup = buildNameKeyboard(page, totalPages)
 			h.send(msg)
 
 		default:
@@ -115,8 +113,53 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	// TODO: refactor
-	n, err := strconv.Atoi(update.Message.Text)
+	h.handleNumberInput(ctx, chatID, update.Message.Text)
+}
+
+func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
+	data := cb.Data
+
+	if !strings.HasPrefix(data, "name:") {
+		return
+	}
+
+	pageStr := strings.TrimPrefix(data, "name:")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 0 {
+		log.Printf("invalid page in callback: %s", data)
+		return
+	}
+
+	names, err := h.nameUseCase.GetAllNames(ctx)
+	if err != nil {
+		log.Printf("failed to get all names: %v", err)
+		return
+	}
+
+	text, totalPages := buildNamesPage(names, page)
+	if totalPages == 0 || page >= totalPages {
+		log.Printf("page out of range: %d (totalPages=%d)", page, totalPages)
+		return
+	}
+
+	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ParseMode = tgbotapi.ModeHTML
+	kb := buildNameKeyboard(page, totalPages)
+	edit.ReplyMarkup = &kb
+
+	h.send(edit)
+
+	// Remove the user's "clock".
+	answer := tgbotapi.NewCallback(cb.ID, "")
+	if _, err := h.bot.Request(answer); err != nil {
+		log.Println("callback answer error:", err)
+	}
+}
+
+func (h *Handler) handleNumberInput(ctx context.Context, chatID int64, text string) {
+	msg := newHTMLMessage(chatID, "")
+
+	n, err := strconv.Atoi(text)
 	if err != nil {
 		msg.Text = msgIncorrectNameNumber
 		h.send(msg)
@@ -136,47 +179,6 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	h.send(msg)
 	if audio != nil {
 		h.send(*audio)
-	}
-}
-
-func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
-	data := cb.Data
-
-	if !strings.HasPrefix(data, "name:") {
-		return
-	}
-
-	idxStr := strings.TrimPrefix(data, "name:")
-	idx, err := strconv.Atoi(idxStr)
-	if err != nil || idx < 0 || idx > 98 {
-		log.Printf("invalid idx in callback: %s", data)
-		return
-	}
-
-	names, err := h.nameUseCase.GetAllNames(ctx)
-	if err != nil {
-		log.Printf("failed to get all names: %v", err)
-		return
-	}
-	if idx >= len(names) {
-		log.Printf("idx out of range: %d (len=%d)", idx, len(names))
-		return
-	}
-
-	name := names[idx]
-	text := processName(name)
-
-	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
-	edit.ParseMode = tgbotapi.ModeHTML
-	kb := buildNameKeyboard(idx, len(names))
-	edit.ReplyMarkup = &kb
-
-	h.send(edit)
-
-	// Remove the user's "clock".
-	answer := tgbotapi.NewCallback(cb.ID, "")
-	if _, err := h.bot.Request(answer); err != nil {
-		log.Println("callback answer error:", err)
 	}
 }
 

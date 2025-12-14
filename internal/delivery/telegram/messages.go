@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -43,10 +44,11 @@ var (
 )
 
 const lrm = "\u200E"
+const perPage = 5
 
 func processName(n entities.Name) string {
 	return fmt.Sprintf(
-		"%s<b>%d. %s</b>\n\n<b>Транслитерация:</b>  %s\n<b>Перевод:</b> %s\n<b>Значение:</b> %s",
+		"%s<b>%d. </b>%s\n\n<b>Транслитерация:</b>  %s\n<b>Перевод:</b> %s\n<b>Значение:</b> %s",
 		lrm,
 		n.Number,
 		n.ArabicName,
@@ -60,8 +62,7 @@ func buildNameResponse(
 	ctx context.Context,
 	get func(ctx2 context.Context) (entities.Name, error), chatID int64,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig) {
-	msg := tgbotapi.NewMessage(chatID, "")
-	msg.ParseMode = tgbotapi.ModeHTML
+	msg := newHTMLMessage(chatID, "")
 
 	name, err := get(ctx)
 	if err != nil {
@@ -79,24 +80,25 @@ func buildNameResponse(
 	return msg, audio
 }
 
-func buildNameKeyboard(idx, total int) tgbotapi.InlineKeyboardMarkup {
-	prevData := fmt.Sprintf("name:%d", idx-1)
-	nextData := fmt.Sprintf("name:%d", idx+1)
+func buildNameKeyboard(page, totalPages int) tgbotapi.InlineKeyboardMarkup {
+	prevData := fmt.Sprintf("name:%d", page-1)
+	nextData := fmt.Sprintf("name:%d", page+1)
 
+	var buttons [][]tgbotapi.InlineKeyboardButton
 	var row []tgbotapi.InlineKeyboardButton
 
-	if idx > 0 {
+	if page > 0 {
 		row = append(row, tgbotapi.NewInlineKeyboardButtonData(prevButtonData, prevData))
 	}
-	if idx < total-1 {
+	if page < totalPages-1 {
 		row = append(row, tgbotapi.NewInlineKeyboardButtonData(nextButtonData, nextData))
 	}
 
-	if len(row) == 0 {
-		return tgbotapi.NewInlineKeyboardMarkup()
+	if len(row) > 0 {
+		buttons = append(buttons, row)
 	}
 
-	return tgbotapi.NewInlineKeyboardMarkup(row)
+	return tgbotapi.NewInlineKeyboardMarkup(buttons...)
 }
 
 func buildNameAudio(name entities.Name, chatID int64) *tgbotapi.AudioConfig {
@@ -106,4 +108,43 @@ func buildNameAudio(name entities.Name, chatID int64) *tgbotapi.AudioConfig {
 	a.Caption = name.Transliteration
 
 	return &a
+}
+
+func buildNamesPage(names []entities.Name, page int) (text string, totalPages int) {
+	totalPages = (len(names) + perPage - 1) / perPage
+	if totalPages == 0 {
+		return "", 0
+	}
+
+	pageNames := paginateNames(names, page, perPage)
+
+	var b strings.Builder
+	for i, name := range pageNames {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(processName(name))
+	}
+
+	return b.String(), totalPages
+}
+
+func paginateNames(names []entities.Name, page, perPage int) []entities.Name {
+	start := page * perPage
+	end := start + perPage
+
+	if start >= len(names) {
+		return nil
+	}
+	if end > len(names) {
+		end = len(names)
+	}
+
+	return names[start:end]
+}
+
+func newHTMLMessage(chatID int64, text string) tgbotapi.MessageConfig {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+	return msg
 }
