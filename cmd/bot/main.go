@@ -42,6 +42,10 @@ func main() {
 			Description: "Получить случайное имя",
 		},
 		{
+			Command:     "range",
+			Description: "Посмотреть имена в диапазоне (использование: /range 25 30)",
+		},
+		{
 			Command:     "settings",
 			Description: "Настроить напоминания",
 		},

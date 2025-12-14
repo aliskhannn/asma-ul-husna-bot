@@ -40,7 +40,7 @@ var (
 	msgUseRange            = "Используйте: /range 25 30"
 	msgInvalidRange        = "Некорректный диапазон. Пример: /range 25 30"
 	msgFailedToGetName     = "Не удалось получить имя. Попробуйте ещё раз позже."
-	msgUnknownCommand      = "Неизвестная команда. Введите номер имени или используйте /random или /help."
+	msgUnknownCommand      = "Неизвестная команда. Список доступных команд:\n\n/all — посмотреть все имена\n/random — получить случайное имя\n/range N M — посмотреть имена с N по M"
 )
 
 var (
