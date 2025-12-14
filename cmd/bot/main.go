@@ -42,6 +42,10 @@ func main() {
 			Description: "Получить случайное имя",
 		},
 		{
+			Command:     "settings",
+			Description: "Настроить напоминания",
+		},
+		{
 			Command:     "help",
 			Description: "Помощь",
 		},

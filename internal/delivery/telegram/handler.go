@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -91,8 +92,8 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			}
 
 		case "all":
-			names, err := h.nameUseCase.GetAllNames(ctx)
-			if err != nil || len(names) == 0 {
+			names := h.getAllNames(ctx)
+			if names == nil {
 				msg.Text = msgFailedToGetName
 				h.send(msg)
 				return
@@ -101,8 +102,59 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			page := 0
 			text, totalPages := buildNamesPage(names, page)
 
+			prevData := fmt.Sprintf("name:%d", page-1)
+			nextData := fmt.Sprintf("name:%d", page+1)
+
 			msg.Text = text
-			msg.ReplyMarkup = buildNameKeyboard(page, totalPages)
+			kb := buildNameKeyboard(page, totalPages, prevData, nextData)
+			if kb != nil {
+				msg.ReplyMarkup = *kb
+			}
+
+			h.send(msg)
+
+		case "range":
+			args := strings.Fields(update.Message.CommandArguments())
+			if len(args) != 2 {
+				msg.Text = msgUseRange
+				h.send(msg)
+				return
+			}
+
+			from, errFrom := strconv.Atoi(args[0])
+			to, errTo := strconv.Atoi(args[1])
+			if errFrom != nil || errTo != nil || from < 1 || to > 99 || from > to {
+				msg.Text = msgInvalidRange
+				h.send(msg)
+				return
+			}
+
+			names := h.getAllNames(ctx)
+			if names == nil {
+				msg.Text = msgFailedToGetName
+				h.send(msg)
+				return
+			}
+
+			pages := buildRangePages(names, from, to)
+			if len(pages) == 0 {
+				msg.Text = msgFailedToGetName
+				h.send(msg)
+				return
+			}
+
+			page := 0
+			totalPages := len(pages)
+
+			prevData := fmt.Sprintf("range:%d:%d:%d", page-1, from, to)
+			nextData := fmt.Sprintf("range:%d:%d:%d", page+1, from, to)
+
+			msg = newHTMLMessage(chatID, pages[page])
+			kb := buildNameKeyboard(page, totalPages, prevData, nextData)
+			if kb != nil {
+				msg.ReplyMarkup = *kb
+			}
+
 			h.send(msg)
 
 		default:
@@ -117,35 +169,30 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 }
 
 func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
-	data := cb.Data
+	var (
+		text string
+		kb   *tgbotapi.InlineKeyboardMarkup
+		ok   bool
+	)
 
-	if !strings.HasPrefix(data, "name:") {
+	switch {
+	case strings.HasPrefix(cb.Data, "range:"):
+		text, kb, ok = h.handleRangeCallback(ctx, cb)
+	case strings.HasPrefix(cb.Data, "name:"):
+		text, kb, ok = h.handleAllCallback(ctx, cb)
+	default:
 		return
 	}
 
-	pageStr := strings.TrimPrefix(data, "name:")
-	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 0 {
-		log.Printf("invalid page in callback: %s", data)
-		return
-	}
-
-	names, err := h.nameUseCase.GetAllNames(ctx)
-	if err != nil {
-		log.Printf("failed to get all names: %v", err)
-		return
-	}
-
-	text, totalPages := buildNamesPage(names, page)
-	if totalPages == 0 || page >= totalPages {
-		log.Printf("page out of range: %d (totalPages=%d)", page, totalPages)
+	if !ok {
 		return
 	}
 
 	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
 	edit.ParseMode = tgbotapi.ModeHTML
-	kb := buildNameKeyboard(page, totalPages)
-	edit.ReplyMarkup = &kb
+	if kb != nil {
+		edit.ReplyMarkup = kb
+	}
 
 	h.send(edit)
 
@@ -154,6 +201,70 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	if _, err := h.bot.Request(answer); err != nil {
 		log.Println("callback answer error:", err)
 	}
+}
+
+func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) (string, *tgbotapi.InlineKeyboardMarkup, bool) {
+	pageStr := strings.TrimPrefix(cb.Data, "name:")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 0 {
+		log.Printf("invalid page in callback: %s", cb.Data)
+		return "", nil, false
+	}
+
+	names := h.getAllNames(ctx)
+	if names == nil {
+		return "", nil, false
+	}
+
+	text, totalPages := buildNamesPage(names, page)
+	if totalPages == 0 || page >= totalPages {
+		log.Printf("page out of range: %d (totalPages=%d)", page, totalPages)
+		return "", nil, false
+	}
+
+	prevData := fmt.Sprintf("name:%d", page-1)
+	nextData := fmt.Sprintf("name:%d", page+1)
+
+	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
+
+	return text, kb, true
+}
+
+func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) (string, *tgbotapi.InlineKeyboardMarkup, bool) {
+	parts := strings.Split(cb.Data, ":")
+	if len(parts) != 4 {
+		log.Printf("invalid range callback data: %s", cb.Data)
+		return "", nil, false
+	}
+
+	page, err1 := strconv.Atoi(parts[1])
+	from, err2 := strconv.Atoi(parts[2])
+	to, err3 := strconv.Atoi(parts[3])
+	if err1 != nil || err2 != nil || err3 != nil || page < 0 || from < 1 || to > 99 || from > to {
+		log.Printf("invalid range callback values: %s", cb.Data)
+		return "", nil, false
+	}
+
+	names := h.getAllNames(ctx)
+	if names == nil {
+		return "", nil, false
+	}
+
+	pages := buildRangePages(names, from, to)
+	totalPages := len(pages)
+	if totalPages == 0 || page >= totalPages {
+		log.Printf("range page out of range: %d (totalPages=%d)", page, totalPages)
+		return "", nil, false
+	}
+
+	text := pages[page]
+
+	prevData := fmt.Sprintf("range:%d:%d:%d", page-1, from, to)
+	nextData := fmt.Sprintf("range:%d:%d:%d", page+1, from, to)
+
+	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
+
+	return text, kb, true
 }
 
 func (h *Handler) handleNumberInput(ctx context.Context, chatID int64, text string) {
@@ -186,4 +297,18 @@ func (h *Handler) send(c tgbotapi.Chattable) {
 	if _, err := h.bot.Send(c); err != nil {
 		log.Printf("failed to send telegram message: %v", err)
 	}
+}
+
+func (h *Handler) getAllNames(ctx context.Context) []entities.Name {
+	names, err := h.nameUseCase.GetAllNames(ctx)
+	if err != nil {
+		log.Printf("failed to get all names: %v", err)
+		return nil
+	}
+	if len(names) == 0 {
+		log.Println("no names found")
+		return nil
+	}
+
+	return names
 }

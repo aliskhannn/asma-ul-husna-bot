@@ -11,8 +11,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/entities"
 )
 
-var (
-	msgWelcome = `<b>السلام عليكم ورحمة الله وبركاته</b>
+var msgWelcome = `السلام عليكم ورحمة الله وبركاته
 
 Абу Хурайра, да будет доволен им Аллах, передаёт, что Посланник Аллаха ﷺ сказал: «Поистине, у Аллаха девяносто девять имён — сотня без одного, и каждый, кто запомнит их, войдёт в Рай. Поистине, Он (— это Тот, Кто) не имеет пары /витр/, и Он любит (всё) непарное». (Аль-Бухари, 6410)
 
@@ -23,24 +22,30 @@ var (
 📖 Изучать каждое имя с <b>переводом</b>, <b>транслитерацией</b> и <b>аудиопроизношением</b>.
 ⏰ Настроить <b>гибкие напоминания</b> для ежедневного повторения.
 🧠 Проходить <b>квизы</b> для проверки и отслеживания прогресса.
-🌍 Получать информацию на <b>75 языках</b>.
 
 Чтобы начать:
 
-1. Нажмите /settings для выбора языка и настройки напоминаний.
-2. Введите 1 для просмотра первого имени.
-3. Используйте /random чтобы получить рандомное имя.
+1. Введите 1 для просмотра первого имени.
+2. Используйте /random чтобы получить рандомное имя.
+3. Нажмите /all для просмотра всех имён.
+4. Используйте /range N M для просмотра имён с N по M.
+5. Нажмите /settings для выбора языка и настройки напоминаний.
+6. Нажмите /help для получения помощи.
 
 <b>Начните свой путь к знанию прямо сейчас!</b>`
+
+var (
 	msgIncorrectNameNumber = "Некорректный ввод. Введите число от 1 до 99."
 	msgOutOfRangeNumber    = "Номер имени должен быть от 1 до 99."
+	msgUseRange            = "Используйте: /range 25 30"
+	msgInvalidRange        = "Некорректный диапазон. Пример: /range 25 30"
 	msgFailedToGetName     = "Не удалось получить имя. Попробуйте ещё раз позже."
 	msgUnknownCommand      = "Неизвестная команда. Введите номер имени или используйте /random или /help."
 )
 
 var (
-	prevButtonData = "◀️ Назад"
-	nextButtonData = "Вперёд ▶"
+	prevButtonData = "◀️️ Назад"
+	nextButtonData = "Вперёд ▶️"
 )
 
 const lrm = "\u200E"
@@ -80,11 +85,11 @@ func buildNameResponse(
 	return msg, audio
 }
 
-func buildNameKeyboard(page, totalPages int) tgbotapi.InlineKeyboardMarkup {
-	prevData := fmt.Sprintf("name:%d", page-1)
-	nextData := fmt.Sprintf("name:%d", page+1)
+func buildNameKeyboard(page, totalPages int, prevData, nextData string) *tgbotapi.InlineKeyboardMarkup {
+	if totalPages <= 1 {
+		return nil
+	}
 
-	var buttons [][]tgbotapi.InlineKeyboardButton
 	var row []tgbotapi.InlineKeyboardButton
 
 	if page > 0 {
@@ -94,11 +99,10 @@ func buildNameKeyboard(page, totalPages int) tgbotapi.InlineKeyboardMarkup {
 		row = append(row, tgbotapi.NewInlineKeyboardButtonData(nextButtonData, nextData))
 	}
 
-	if len(row) > 0 {
-		buttons = append(buttons, row)
+	kb := tgbotapi.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{row},
 	}
-
-	return tgbotapi.NewInlineKeyboardMarkup(buttons...)
+	return &kb
 }
 
 func buildNameAudio(name entities.Name, chatID int64) *tgbotapi.AudioConfig {
@@ -127,6 +131,42 @@ func buildNamesPage(names []entities.Name, page int) (text string, totalPages in
 	}
 
 	return b.String(), totalPages
+}
+
+func buildRangePages(names []entities.Name, from, to int) (pages []string) {
+	if from < 1 {
+		from = 1
+	}
+	if to > len(names) {
+		to = len(names)
+	}
+	if from > to {
+		return nil
+	}
+
+	fromIdx := from - 1
+	toIdx := to
+
+	for start := fromIdx; start < toIdx; start += perPage {
+		end := start + perPage
+		if end > toIdx {
+			end = toIdx
+		}
+
+		chumk := names[start:end]
+
+		var b strings.Builder
+		for i, name := range chumk {
+			if i > 0 {
+				b.WriteString("\n\n")
+			}
+			b.WriteString(processName(name))
+		}
+
+		pages = append(pages, b.String())
+	}
+
+	return pages
 }
 
 func paginateNames(names []entities.Name, page, perPage int) []entities.Name {
