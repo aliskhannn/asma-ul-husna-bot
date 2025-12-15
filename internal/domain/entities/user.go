@@ -2,12 +2,13 @@ package entities
 
 import "time"
 
+// User represents bot user.
 type User struct {
-	ID           int64
+	ID           int64 // Telegram user ID
 	FirstName    string
 	LastName     *string // nullable
 	Username     *string // nullable
-	LanguageCode *string // nullable
+	LanguageCode *string // nullable, "ru", "en"
 	IsActive     bool
 	CreatedAt    time.Time
 }

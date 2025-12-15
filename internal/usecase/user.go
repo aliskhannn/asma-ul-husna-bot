@@ -3,7 +3,7 @@ package usecase
 import (
 	"context"
 
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
 type UserRepository interface {
@@ -35,6 +35,6 @@ func (uc *UserUseCase) EnsureUser(
 	if exists {
 		return nil
 	}
-	
+
 	return uc.repo.SaveUser(ctx, user)
 }

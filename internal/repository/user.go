@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
 type UserRepository struct {

@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"os"
 
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
 var (
