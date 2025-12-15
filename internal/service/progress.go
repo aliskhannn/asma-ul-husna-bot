@@ -32,7 +32,7 @@ func (s *ProgressService) MarkAsViewed(ctx context.Context, userID int64, nameNu
 	return s.repository.MarkAsViewed(ctx, userID, nameNumber)
 }
 
-func (s *ProgressService) GetByUserID(ctx context.Context, userID int64) ([]*entities.UserProgress, error) {
+func (s *ProgressService) GetUserProgress(ctx context.Context, userID int64) ([]*entities.UserProgress, error) {
 	return s.repository.GetByUserID(ctx, userID)
 }
 
@@ -54,4 +54,37 @@ func (s *ProgressService) GetStats(ctx context.Context, userID int64) (*reposito
 
 func (s *ProgressService) CountLearned(ctx context.Context, userID int64) (int, error) {
 	return s.repository.CountLearned(ctx, userID)
+}
+
+type ProgressSummary struct {
+	Learned        int
+	InProgress     int
+	NotStarted     int
+	Percentage     float64
+	DaysToComplete int
+	Accuracy       float64
+}
+
+func (s *ProgressService) GetProgressSummary(ctx context.Context, userID int64, namesPerDay int) (*ProgressSummary, error) {
+	stats, err := s.repository.GetStats(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	remaining := 99 - stats.Learned
+	daysToComplete := 0
+	if namesPerDay > 0 && remaining > 0 {
+		daysToComplete = (remaining + namesPerDay - 1) / namesPerDay
+	}
+
+	percentage := float64(stats.Learned) / 99.0 * 100
+
+	return &ProgressSummary{
+		Learned:        stats.Learned,
+		InProgress:     stats.InProgress,
+		NotStarted:     stats.NotStarted,
+		Percentage:     percentage,
+		DaysToComplete: daysToComplete,
+		Accuracy:       stats.Accuracy,
+	}, nil
 }

@@ -22,16 +22,6 @@ func NewProgressRepository(db *pgxpool.Pool) *ProgressRepository {
 	return &ProgressRepository{db: db}
 }
 
-// ProgressStats contains user progress statistics for /progress command.
-type ProgressStats struct {
-	TotalViewed    int        // Total names viewed (has progress record)
-	Learned        int        // Names marked as learned
-	InProgress     int        // Names viewed but not learned
-	NotStarted     int        // Names never viewed (99 - TotalViewed)
-	Accuracy       float64    // Average correct_count for learned names
-	LastActivityAt *time.Time // Last review timestamp
-}
-
 // Upsert creates or updates a progress record.
 func (r *ProgressRepository) Upsert(ctx context.Context, progress *entities.UserProgress) error {
 	query := `
@@ -417,6 +407,16 @@ func (r *ProgressRepository) CountInProgress(ctx context.Context, userID int64) 
 	}
 
 	return count, nil
+}
+
+// ProgressStats contains user progress statistics for /progress command.
+type ProgressStats struct {
+	TotalViewed    int        // Total names viewed (has progress record)
+	Learned        int        // Names marked as learned
+	InProgress     int        // Names viewed but not learned
+	NotStarted     int        // Names never viewed (99 - TotalViewed)
+	Accuracy       float64    // Average correct_count for learned names
+	LastActivityAt *time.Time // Last review timestamp
 }
 
 // GetStats returns comprehensive statistics for /progress command.

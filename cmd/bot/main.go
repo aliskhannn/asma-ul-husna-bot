@@ -43,11 +43,15 @@ func main() {
 		},
 		{
 			Command:     "range",
-			Description: "Посмотреть имена в диапазоне (использование: /range 25 30)",
+			Description: "Получить имена в диапазоне (использование: /range 25 30)",
+		},
+		{
+			Command:     "progress",
+			Description: "Показать прогресс",
 		},
 		{
 			Command:     "settings",
-			Description: "Настроить напоминания",
+			Description: "Настройки",
 		},
 		{
 			Command:     "help",
@@ -76,18 +80,30 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	dbpool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer dbpool.Close()
+	defer pool.Close()
 
-	userRepo := repository.NewUserRepository(dbpool)
+	userRepo := repository.NewUserRepository(pool)
 
 	nameService := service.NewNameService(nameRepo)
 	userService := service.NewUserService(userRepo)
 
-	handler := telegram.NewHandler(bot, nameService, userService)
+	progressRepo := repository.NewProgressRepository(pool)
+	settingsRepo := repository.NewSettingsRepository(pool)
+
+	progressService := service.NewProgressService(progressRepo)
+	settingsService := service.NewSettingsService(settingsRepo)
+
+	handler := telegram.NewHandler(
+		bot,
+		nameService,
+		userService,
+		progressService,
+		settingsService,
+	)
 	if err := handler.Run(ctx); err != nil {
 		log.Panic(err)
 	}
