@@ -12,7 +12,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/config"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/delivery/telegram"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/usecase"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
 func main() {
@@ -84,10 +84,10 @@ func main() {
 
 	userRepo := repository.NewUserRepository(dbpool)
 
-	nameUC := usecase.NewNameUseCase(nameRepo)
-	userUC := usecase.NewUserUseCase(userRepo)
+	nameService := service.NewNameService(nameRepo)
+	userService := service.NewUserService(userRepo)
 
-	handler := telegram.NewHandler(bot, nameUC, userUC)
+	handler := telegram.NewHandler(bot, nameService, userService)
 	if err := handler.Run(ctx); err != nil {
 		log.Panic(err)
 	}

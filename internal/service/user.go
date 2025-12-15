@@ -1,4 +1,4 @@
-package usecase
+package service
 
 import (
 	"context"
@@ -11,24 +11,24 @@ type UserRepository interface {
 	UserExists(ctx context.Context, userID int64) (bool, error)
 }
 
-type UserUseCase struct {
-	repo UserRepository
+type UserService struct {
+	repository UserRepository
 }
 
-func NewUserUseCase(repo UserRepository) *UserUseCase {
-	return &UserUseCase{repo: repo}
+func NewUserService(repository UserRepository) *UserService {
+	return &UserService{repository: repository}
 }
 
-func (uc *UserUseCase) EnsureUser(
+func (s *UserService) EnsureUser(
 	ctx context.Context,
 	userID int64,
 	firstName, lastName string,
 	username string,
 	languageCode string,
 ) error {
-	user := entities.NewUser(userID, firstName, lastName, username, languageCode)
+	user := entities.NewUser(userID, firstName, &lastName, &username, &languageCode)
 
-	exists, err := uc.repo.UserExists(ctx, user.ID)
+	exists, err := s.repository.UserExists(ctx, user.ID)
 	if err != nil {
 		return err
 	}
@@ -36,5 +36,5 @@ func (uc *UserUseCase) EnsureUser(
 		return nil
 	}
 
-	return uc.repo.SaveUser(ctx, user)
+	return s.repository.SaveUser(ctx, user)
 }

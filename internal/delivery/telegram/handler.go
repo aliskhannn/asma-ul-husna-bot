@@ -12,7 +12,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
-type NameUseCase interface {
+type NameService interface {
 	GetNameByNumber(ctx context.Context, number int) (entities.Name, error)
 	GetRandomName(ctx context.Context) (entities.Name, error)
 	GetAllNames(ctx context.Context) ([]entities.Name, error)
@@ -24,14 +24,14 @@ type UserUseCase interface {
 
 type Handler struct {
 	bot         *tgbotapi.BotAPI
-	nameUseCase NameUseCase
+	nameService NameService
 	userUseCase UserUseCase
 }
 
-func NewHandler(bot *tgbotapi.BotAPI, nameUseCase NameUseCase, userUseCase UserUseCase) *Handler {
+func NewHandler(bot *tgbotapi.BotAPI, nameService NameService, userUseCase UserUseCase) *Handler {
 	return &Handler{
 		bot:         bot,
-		nameUseCase: nameUseCase,
+		nameService: nameService,
 		userUseCase: userUseCase,
 	}
 }
@@ -85,7 +85,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			h.send(msg)
 
 		case "random":
-			msg, audio := buildNameResponse(ctx, h.nameUseCase.GetRandomName, chatID)
+			msg, audio := buildNameResponse(ctx, h.nameService.GetRandomName, chatID)
 			h.send(msg)
 			if audio != nil {
 				h.send(*audio)
@@ -284,7 +284,7 @@ func (h *Handler) handleNumberInput(ctx context.Context, chatID int64, text stri
 	}
 
 	msg, audio := buildNameResponse(ctx, func(ctx context.Context) (entities.Name, error) {
-		return h.nameUseCase.GetNameByNumber(ctx, n)
+		return h.nameService.GetNameByNumber(ctx, n)
 	}, chatID)
 
 	h.send(msg)
@@ -300,7 +300,7 @@ func (h *Handler) send(c tgbotapi.Chattable) {
 }
 
 func (h *Handler) getAllNames(ctx context.Context) []entities.Name {
-	names, err := h.nameUseCase.GetAllNames(ctx)
+	names, err := h.nameService.GetAllNames(ctx)
 	if err != nil {
 		log.Printf("failed to get all names: %v", err)
 		return nil
