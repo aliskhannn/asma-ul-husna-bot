@@ -56,21 +56,24 @@ const (
 	namesPerPage = 5
 )
 
-func processName(n entities.Name) string {
+func formatNameMessage(name *entities.Name) string {
 	return fmt.Sprintf(
-		"%s<b>%d. </b>%s\n\n<b>Транслитерация:</b>  %s\n<b>Перевод:</b> %s\n<b>Значение:</b> %s",
+		"%s<b>%d. </b>%s<b>\n\n"+
+			"Транслитерация:</b>  %s\n"+
+			"<b>Перевод:</b> %s\n\n"+
+			"<b>Значение:</b> %s",
 		lrm,
-		n.Number,
-		n.ArabicName,
-		n.Transliteration,
-		n.Translation,
-		n.Meaning,
+		name.Number,
+		name.ArabicName,
+		name.Transliteration,
+		name.Translation,
+		name.Meaning,
 	)
 }
 
 func buildNameResponse(
 	ctx context.Context,
-	get func(ctx2 context.Context) (entities.Name, error), chatID int64,
+	get func(ctx2 context.Context) (*entities.Name, error), chatID int64,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig, error) {
 	msg := newHTMLMessage(chatID, "")
 
@@ -89,7 +92,7 @@ func buildNameResponse(
 		return msg, nil, err
 	}
 
-	msg.Text = processName(name)
+	msg.Text = formatNameMessage(name)
 
 	if name.Audio == "" {
 		return msg, nil, nil
@@ -99,7 +102,7 @@ func buildNameResponse(
 	return msg, audio, nil
 }
 
-func buildNameAudio(name entities.Name, chatID int64) *tgbotapi.AudioConfig {
+func buildNameAudio(name *entities.Name, chatID int64) *tgbotapi.AudioConfig {
 	path := filepath.Join("assets", "audio", name.Audio)
 
 	a := tgbotapi.NewAudio(chatID, tgbotapi.FilePath(path))
@@ -122,10 +125,10 @@ func buildNameKeyboard(page, totalPages int, prevData, nextData string) *tgbotap
 	var row []tgbotapi.InlineKeyboardButton
 
 	if page > 0 {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData("◀️️ Назад", prevData))
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData("◀️ Предыдущее", prevData))
 	}
 	if page < totalPages-1 {
-		row = append(row, tgbotapi.NewInlineKeyboardButtonData("Вперёд ▶️", nextData))
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData("Следующее ▶️", nextData))
 	}
 
 	kb := tgbotapi.InlineKeyboardMarkup{
@@ -134,7 +137,7 @@ func buildNameKeyboard(page, totalPages int, prevData, nextData string) *tgbotap
 	return &kb
 }
 
-func buildNamesPage(names []entities.Name, page int) (text string, totalPages int) {
+func buildNamesPage(names []*entities.Name, page int) (text string, totalPages int) {
 	totalPages = (len(names) + namesPerPage - 1) / namesPerPage
 	if totalPages == 0 {
 		return "", 0
@@ -147,13 +150,13 @@ func buildNamesPage(names []entities.Name, page int) (text string, totalPages in
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
-		b.WriteString(processName(name))
+		b.WriteString(formatNameMessage(name))
 	}
 
 	return b.String(), totalPages
 }
 
-func buildRangePages(names []entities.Name, from, to int) (pages []string) {
+func buildRangePages(names []*entities.Name, from, to int) (pages []string) {
 	if from < 1 {
 		from = 1
 	}
@@ -180,7 +183,7 @@ func buildRangePages(names []entities.Name, from, to int) (pages []string) {
 			if i > 0 {
 				b.WriteString("\n\n")
 			}
-			b.WriteString(processName(name))
+			b.WriteString(formatNameMessage(name))
 		}
 
 		pages = append(pages, b.String())
@@ -189,7 +192,7 @@ func buildRangePages(names []entities.Name, from, to int) (pages []string) {
 	return pages
 }
 
-func paginateNames(names []entities.Name, page, namesPerPage int) []entities.Name {
+func paginateNames(names []*entities.Name, page, namesPerPage int) []*entities.Name {
 	start := page * namesPerPage
 	end := start + namesPerPage
 
@@ -203,7 +206,7 @@ func paginateNames(names []entities.Name, page, namesPerPage int) []entities.Nam
 	return names[start:end]
 }
 
-func (h *Handler) getAllNames(ctx context.Context) []entities.Name {
+func (h *Handler) getAllNames(ctx context.Context) []*entities.Name {
 	names, err := h.nameService.GetAll(ctx)
 	if err != nil {
 		h.logger.Error("failed to get all names",

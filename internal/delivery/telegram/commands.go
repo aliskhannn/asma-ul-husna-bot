@@ -9,7 +9,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
-func (h *Handler) numberHandler(numStr string) HandlerFunc {
+func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		msg := newHTMLMessage(chatID, "")
 
@@ -25,7 +25,7 @@ func (h *Handler) numberHandler(numStr string) HandlerFunc {
 			return nil
 		}
 
-		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (entities.Name, error) {
+		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 			return h.nameService.GetByNumber(ctx, n)
 		}, chatID)
 		if err != nil {
@@ -36,21 +36,34 @@ func (h *Handler) numberHandler(numStr string) HandlerFunc {
 		if audio != nil {
 			h.send(*audio)
 		}
+
+		if err = h.progressService.MarkAsViewed(ctx, userID, n); err != nil {
+			return err
+		}
+
 		return nil
 	}
 }
 
-func (h *Handler) randomHandler() HandlerFunc {
+func (h *Handler) randomHandler(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
-		msg, audio, err := buildNameResponse(ctx, h.nameService.GetRandom, chatID)
+		name, err := h.nameService.GetRandom(ctx)
 		if err != nil {
 			return err
 		}
 
+		msg := newHTMLMessage(chatID, formatNameMessage(name))
 		h.send(msg)
-		if audio != nil {
+
+		if name.Audio != "" {
+			audio := buildNameAudio(name, chatID)
 			h.send(*audio)
 		}
+
+		if err = h.progressService.MarkAsViewed(ctx, userID, name.Number); err != nil {
+			return err
+		}
+
 		return nil
 	}
 }

@@ -15,13 +15,14 @@ type UserService interface {
 }
 
 type NameService interface {
-	GetByNumber(ctx context.Context, number int) (entities.Name, error)
-	GetRandom(ctx context.Context) (entities.Name, error)
-	GetAll(ctx context.Context) ([]entities.Name, error)
+	GetByNumber(ctx context.Context, number int) (*entities.Name, error)
+	GetRandom(ctx context.Context) (*entities.Name, error)
+	GetAll(ctx context.Context) ([]*entities.Name, error)
 }
 
 type ProgressService interface {
 	GetProgressSummary(ctx context.Context, userID int64, namesPerDay int) (*service.ProgressSummary, error)
+	MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error
 }
 
 type SettingsService interface {
@@ -120,7 +121,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			h.send(msg)
 
 		case "random":
-			_ = h.withErrorHandling(h.randomHandler())(ctx, chatID)
+			_ = h.withErrorHandling(h.randomHandler(from.ID))(ctx, chatID)
 
 		case "all":
 			h.handleAllCommand(ctx, chatID)
@@ -142,7 +143,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	_ = h.withErrorHandling(h.numberHandler(update.Message.Text))(ctx, chatID)
+	_ = h.withErrorHandling(h.numberHandler(update.Message.Text, from.ID))(ctx, chatID)
 }
 
 func (h *Handler) sendError(chatID int64, err string) {

@@ -133,7 +133,7 @@ func (r *ProgressRepository) DeleteByUserID(ctx context.Context, userID int64) e
 func (r *ProgressRepository) MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error {
 	query := `
 		INSERT INTO user_progress (user_id, name_number, is_learned, last_reviewed_at, correct_count)
-		VALUES ($1, $2, false, NULL, $5)
+		VALUES ($1, $2, false, NULL, 0)
 		ON CONFLICT (user_id, name_number) DO NOTHING
 	`
 
