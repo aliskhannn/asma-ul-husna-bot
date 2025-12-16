@@ -253,8 +253,85 @@ func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔔 Напоминания", "reminder_settings"),
 		),
+		//tgbotapi.NewInlineKeyboardRow(
+		//	tgbotapi.NewInlineKeyboardButtonData("« Назад", "main_menu"),
+		//),
+	)
+}
+
+func buildNamesPerDayKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("« Назад", "main_menu"),
+			tgbotapi.NewInlineKeyboardButtonData("1️⃣ (99 дней)", "settings:names_per_day:1"),
+			tgbotapi.NewInlineKeyboardButtonData("2️⃣ (50 дней)", "settings:names_per_day:2"),
+			tgbotapi.NewInlineKeyboardButtonData("3️⃣ (33 дня)", "settings:names_per_day:3"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("5️⃣ (20 дней)", "settings:names_per_day:5"),
+			tgbotapi.NewInlineKeyboardButtonData("🔟 (10 дней)", "settings:names_per_day:10"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", "settings:menu"),
+		),
+	)
+}
+
+func buildQuizLengthKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("5 вопросов", "settings:quiz_length:5"),
+			tgbotapi.NewInlineKeyboardButtonData("10 вопросов", "settings:quiz_length:10"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("15 вопросов", "settings:quiz_length:15"),
+			tgbotapi.NewInlineKeyboardButtonData("20 вопросов", "settings:quiz_length:20"),
+		), tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("25 вопросов", "settings:quiz_length:25"),
+			tgbotapi.NewInlineKeyboardButtonData("30 вопросов", "settings:quiz_length:30"),
+		), tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("35 вопросов", "settings:quiz_length:35"),
+			tgbotapi.NewInlineKeyboardButtonData("40 вопросов", "settings:quiz_length:40"),
+		), tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("45 вопросов", "settings:quiz_length:45"),
+			tgbotapi.NewInlineKeyboardButtonData("50 вопросов", "settings:quiz_length:50"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", "settings:menu"),
+		),
+	)
+}
+
+func buildQuizModesKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(formatQuizMode("new_only"), "settings:quiz_mode:new_only"),
+		), tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(formatQuizMode("review_only"), "settings:quiz_mode:review_only"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(formatQuizMode("mixed"), "settings:quiz_mode:mixed"),
+		),
+	)
+}
+
+func buildToggleTransliterationKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Показывать транслитерацию", "settings:toggle_transliteration:on"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🚫 Не показывать", "settings:toggle_transliteration:off"),
+		),
+	)
+}
+
+func buildToggleAudioKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔊 Включить аудио", "settings:toggle_audio:on"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔇 Отключить аудио", "settings:toggle_audio:off"),
 		),
 	)
 }

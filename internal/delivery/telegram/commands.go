@@ -16,13 +16,12 @@ func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 		n, err := strconv.Atoi(numStr)
 		if err != nil {
 			msg.Text = msgIncorrectNameNumber
-			h.send(msg)
-			return nil
+			return h.send(msg)
 		}
 
 		if n < 1 || n > 99 {
-			h.sendError(chatID, msgOutOfRangeNumber)
-			return nil
+			msg.Text = msgOutOfRangeNumber
+			return h.send(msg)
 		}
 
 		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
@@ -32,9 +31,13 @@ func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 			return err
 		}
 
-		h.send(msg)
+		err = h.send(msg)
+		if err != nil {
+			return err
+		}
+
 		if audio != nil {
-			h.send(*audio)
+			_ = h.send(*audio)
 		}
 
 		if err = h.progressService.MarkAsViewed(ctx, userID, n); err != nil {
@@ -53,11 +56,15 @@ func (h *Handler) randomHandler(userID int64) HandlerFunc {
 		}
 
 		msg := newHTMLMessage(chatID, formatNameMessage(name))
-		h.send(msg)
+		if err = h.send(msg); err != nil {
+			return err
+		}
 
 		if name.Audio != "" {
 			audio := buildNameAudio(name, chatID)
-			h.send(*audio)
+			if err = h.send(*audio); err != nil {
+				return err
+			}
 		}
 
 		if err = h.progressService.MarkAsViewed(ctx, userID, name.Number); err != nil {
@@ -68,14 +75,16 @@ func (h *Handler) randomHandler(userID int64) HandlerFunc {
 	}
 }
 
-func (h *Handler) handleAllCommand(ctx context.Context, chatID int64) {
+func (h *Handler) allCommandHandler(ctx context.Context, chatID int64) error {
 	msg := newHTMLMessage(chatID, "")
 
-	names := h.getAllNames(ctx)
+	names, err := h.getAllNames(ctx)
+	if err != nil {
+		return err
+	}
 	if names == nil {
 		msg.Text = msgNameUnavailable
-		h.send(msg)
-		return
+		return h.send(msg)
 	}
 
 	page := 0
@@ -90,54 +99,49 @@ func (h *Handler) handleAllCommand(ctx context.Context, chatID int64) {
 		msg.ReplyMarkup = *kb
 	}
 
-	h.send(msg)
+	return h.send(msg)
 }
 
-func (h *Handler) handleRangeCommand(ctx context.Context, chatID int64, argsStr string) {
-	msg := newHTMLMessage(chatID, "")
+func (h *Handler) rangeCommandHandler(argsStr string) HandlerFunc {
+	return func(ctx context.Context, chatID int64) error {
+		args := strings.Fields(argsStr)
+		if len(args) != 2 {
+			return h.send(newHTMLMessage(chatID, msgUseRange))
+		}
 
-	args := strings.Fields(argsStr)
-	if len(args) != 2 {
-		msg.Text = msgUseRange
-		h.send(msg)
-		return
+		from, errFrom := strconv.Atoi(args[0])
+		to, errTo := strconv.Atoi(args[1])
+		if errFrom != nil || errTo != nil || from < 1 || to > 99 || from > to {
+			return h.send(newHTMLMessage(chatID, msgInvalidRange))
+		}
+
+		names, err := h.getAllNames(ctx)
+		if err != nil {
+			return err
+		}
+		if names == nil {
+			return h.send(newHTMLMessage(chatID, msgNameUnavailable))
+		}
+
+		pages := buildRangePages(names, from, to)
+		if len(pages) == 0 {
+			return h.send(newHTMLMessage(chatID, msgNameUnavailable))
+		}
+
+		page := 0
+		totalPages := len(pages)
+
+		prevData := fmt.Sprintf("range:%d:%d:%d", page-1, from, to)
+		nextData := fmt.Sprintf("range:%d:%d:%d", page+1, from, to)
+
+		msg := newHTMLMessage(chatID, pages[page])
+		kb := buildNameKeyboard(page, totalPages, prevData, nextData)
+		if kb != nil {
+			msg.ReplyMarkup = *kb
+		}
+
+		return h.send(msg)
 	}
-
-	from, errFrom := strconv.Atoi(args[0])
-	to, errTo := strconv.Atoi(args[1])
-	if errFrom != nil || errTo != nil || from < 1 || to > 99 || from > to {
-		msg.Text = msgInvalidRange
-		h.send(msg)
-		return
-	}
-
-	names := h.getAllNames(ctx)
-	if names == nil {
-		msg.Text = msgNameUnavailable
-		h.send(msg)
-		return
-	}
-
-	pages := buildRangePages(names, from, to)
-	if len(pages) == 0 {
-		msg.Text = msgNameUnavailable
-		h.send(msg)
-		return
-	}
-
-	page := 0
-	totalPages := len(pages)
-
-	prevData := fmt.Sprintf("range:%d:%d:%d", page-1, from, to)
-	nextData := fmt.Sprintf("range:%d:%d:%d", page+1, from, to)
-
-	msg = newHTMLMessage(chatID, pages[page])
-	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
-	if kb != nil {
-		msg.ReplyMarkup = *kb
-	}
-
-	h.send(msg)
 }
 
 func (h *Handler) progressHandler(userID int64) HandlerFunc {
@@ -147,15 +151,13 @@ func (h *Handler) progressHandler(userID int64) HandlerFunc {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
 			msg.Text = msgSettingsUnavailable
-			h.send(msg)
-			return err
+			return h.send(msg)
 		}
 
 		summary, err := h.progressService.GetProgressSummary(ctx, userID, settings.NamesPerDay)
 		if err != nil {
 			msg.Text = msgProgressUnavailable
-			h.send(msg)
-			return err
+			return h.send(msg)
 		}
 
 		progressBar := buildProgressBar(summary.Learned, 99, 20)
@@ -180,8 +182,7 @@ func (h *Handler) progressHandler(userID int64) HandlerFunc {
 		)
 
 		msg.Text = text
-		h.send(msg)
-		return nil
+		return h.send(msg)
 	}
 }
 
@@ -192,8 +193,7 @@ func (h *Handler) settingsHandler(userID int64) HandlerFunc {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
 			msg.Text = msgSettingsUnavailable
-			h.send(msg)
-			return err
+			return h.send(msg)
 		}
 
 		text := fmt.Sprintf(
@@ -214,8 +214,6 @@ func (h *Handler) settingsHandler(userID int64) HandlerFunc {
 
 		msg.Text = text
 		msg.ReplyMarkup = kb
-		h.send(msg)
-
-		return nil
+		return h.send(msg)
 	}
 }

@@ -27,6 +27,11 @@ type ProgressService interface {
 
 type SettingsService interface {
 	GetOrCreate(ctx context.Context, userID int64) (*entities.UserSettings, error)
+	UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error
+	UpdateQuizLength(ctx context.Context, userID int64, quizLength int) error
+	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
+	ToggleTransliteration(ctx context.Context, userID int64) error
+	ToggleAudio(ctx context.Context, userID int64) error
 }
 
 type Handler struct {
@@ -118,16 +123,22 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		switch update.Message.Command() {
 		case "start":
 			msg.Text = msgWelcome
-			h.send(msg)
+			if err := h.send(msg); err != nil {
+				h.logger.Error("failed to send start message",
+					zap.Error(err),
+				)
+			}
 
 		case "random":
 			_ = h.withErrorHandling(h.randomHandler(from.ID))(ctx, chatID)
 
 		case "all":
-			h.handleAllCommand(ctx, chatID)
+			_ = h.withErrorHandling(func(ctx context.Context, chatID int64) error {
+				return h.allCommandHandler(ctx, chatID)
+			})(ctx, chatID)
 
 		case "range":
-			h.handleRangeCommand(ctx, chatID, update.Message.CommandArguments())
+			_ = h.withErrorHandling(h.rangeCommandHandler(update.Message.CommandArguments()))(ctx, chatID)
 
 		case "progress":
 			_ = h.withErrorHandling(h.progressHandler(from.ID))(ctx, chatID)
@@ -137,7 +148,11 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 		default:
 			msg.Text = msgUnknownCommand
-			h.send(msg)
+			if err := h.send(msg); err != nil {
+				h.logger.Error("failed to send unknown command message",
+					zap.Error(err),
+				)
+			}
 		}
 
 		return
@@ -146,15 +161,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	_ = h.withErrorHandling(h.numberHandler(update.Message.Text, from.ID))(ctx, chatID)
 }
 
-func (h *Handler) sendError(chatID int64, err string) {
-	msg := newHTMLMessage(chatID, err)
-	h.send(msg)
-}
-
-func (h *Handler) send(c tgbotapi.Chattable) {
-	if _, err := h.bot.Send(c); err != nil {
-		h.logger.Error("failed to send telegram message",
-			zap.Error(err),
-		)
-	}
+func (h *Handler) send(c tgbotapi.Chattable) error {
+	_, err := h.bot.Send(c)
+	return err
 }
