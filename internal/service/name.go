@@ -7,9 +7,9 @@ import (
 )
 
 type NameRepository interface {
-	GetNameByNumber(_ context.Context, number int) (*entities.Name, error)
-	GetRandomName(_ context.Context) (*entities.Name, error)
-	GetAllNames(_ context.Context) ([]*entities.Name, error)
+	GetByNumber(_ context.Context, number int) (*entities.Name, error)
+	GetRandom(_ context.Context) (*entities.Name, error)
+	GetAll(_ context.Context) ([]*entities.Name, error)
 }
 
 type NameService struct {
@@ -21,13 +21,13 @@ func NewNameService(repository NameRepository) *NameService {
 }
 
 func (s *NameService) GetByNumber(ctx context.Context, number int) (*entities.Name, error) {
-	return s.repository.GetNameByNumber(ctx, number)
+	return s.repository.GetByNumber(ctx, number)
 }
 
 func (s *NameService) GetRandom(ctx context.Context) (*entities.Name, error) {
-	return s.repository.GetRandomName(ctx)
+	return s.repository.GetRandom(ctx)
 }
 
 func (s *NameService) GetAll(ctx context.Context) ([]*entities.Name, error) {
-	return s.repository.GetAllNames(ctx)
+	return s.repository.GetAll(ctx)
 }

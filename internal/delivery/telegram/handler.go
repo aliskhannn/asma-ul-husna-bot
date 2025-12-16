@@ -23,6 +23,7 @@ type NameService interface {
 type ProgressService interface {
 	GetProgressSummary(ctx context.Context, userID int64, namesPerDay int) (*service.ProgressSummary, error)
 	MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error
+	RecordReviewSRS(ctx context.Context, userID int64, nameNumber int, quality entities.AnswerQuality) error
 }
 
 type SettingsService interface {
@@ -34,6 +35,18 @@ type SettingsService interface {
 	ToggleAudio(ctx context.Context, userID int64) error
 }
 
+type QuizService interface {
+	GenerateQuiz(ctx context.Context, userID int64, mode string) (*entities.QuizSession, []entities.Question, error)
+	GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error)
+	CheckAndSaveAnswer(ctx context.Context, userID int64, session *entities.QuizSession, q *entities.Question, selectedIndex int) (*entities.QuizAnswer, error)
+}
+
+type QuizStorage interface {
+	Store(sessionID int64, questions []entities.Question)
+	Get(sessionID int64) []entities.Question
+	Delete(sessionID int64)
+}
+
 type Handler struct {
 	bot             *tgbotapi.BotAPI
 	logger          *zap.Logger
@@ -41,6 +54,8 @@ type Handler struct {
 	userService     UserService
 	progressService ProgressService
 	settingsService SettingsService
+	quizService     QuizService
+	quizStorage     QuizStorage
 }
 
 func NewHandler(
@@ -50,6 +65,8 @@ func NewHandler(
 	userService UserService,
 	progressService ProgressService,
 	settingsService SettingsService,
+	quizService QuizService,
+	quizStorage QuizStorage,
 ) *Handler {
 	return &Handler{
 		bot:             bot,
@@ -58,6 +75,8 @@ func NewHandler(
 		userService:     userService,
 		progressService: progressService,
 		settingsService: settingsService,
+		quizService:     quizService,
+		quizStorage:     quizStorage,
 	}
 }
 
@@ -143,6 +162,9 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		case "progress":
 			_ = h.withErrorHandling(h.progressHandler(from.ID))(ctx, chatID)
 
+		case "quiz":
+			_ = h.withErrorHandling(h.quizHandler(from.ID))(ctx, chatID)
+
 		case "settings":
 			_ = h.withErrorHandling(h.settingsHandler(from.ID))(ctx, chatID)
 
@@ -164,4 +186,52 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 func (h *Handler) send(c tgbotapi.Chattable) error {
 	_, err := h.bot.Send(c)
 	return err
+}
+
+func (h *Handler) getCurrentQuestion(sessionID int64, currentNum int) (*entities.Question, bool) {
+	questions := h.quizStorage.Get(sessionID)
+	if len(questions) == 0 {
+		return nil, false
+	}
+
+	idx := currentNum - 1
+	if idx < 0 || idx >= len(questions) {
+		return nil, false
+	}
+
+	return &questions[idx], true
+}
+
+func (h *Handler) sendQuizQuestion(
+	chatID int64,
+	session *entities.QuizSession,
+	question *entities.Question,
+	currentNum int,
+) error {
+	questionText := formatQuizQuestion(question, currentNum, session.TotalQuestions)
+	keyboard := buildQuizAnswerKeyboard(question, session.ID, currentNum)
+
+	msg := newHTMLMessage(chatID, questionText)
+	msg.ReplyMarkup = keyboard
+
+	return h.send(msg)
+}
+
+func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) error {
+	resultText := formatQuizResult(session)
+	keyboard := buildQuizResultKeyboard()
+
+	msg := newHTMLMessage(chatID, resultText)
+	msg.ReplyMarkup = keyboard
+
+	_, err := h.bot.Send(msg)
+	return err
+}
+
+func (h *Handler) storeQuizQuestions(sessionID int64, questions []entities.Question) {
+	h.quizStorage.Store(sessionID, questions)
+}
+
+func (h *Handler) getQuizQuestions(sessionID int64) []entities.Question {
+	return h.quizStorage.Get(sessionID)
 }

@@ -217,3 +217,29 @@ func (h *Handler) settingsHandler(userID int64) HandlerFunc {
 		return h.send(msg)
 	}
 }
+
+func (h *Handler) quizHandler(userID int64) HandlerFunc {
+	return func(ctx context.Context, chatID int64) error {
+		settings, err := h.settingsService.GetOrCreate(ctx, userID)
+		if err != nil {
+			msg := newHTMLMessage(chatID, msgSettingsUnavailable)
+			return h.send(msg)
+		}
+
+		mode := settings.QuizMode
+		session, questions, err := h.quizService.GenerateQuiz(ctx, userID, mode)
+		if err != nil || len(questions) == 0 {
+			msg := newHTMLMessage(chatID, msgQuizUnavailable)
+			return h.send(msg)
+		}
+
+		h.storeQuizQuestions(session.ID, questions)
+
+		startMsg := newHTMLMessage(chatID, buildQuizStartMessage(mode))
+		if err := h.send(startMsg); err != nil {
+			return err
+		}
+
+		return h.sendQuizQuestion(chatID, session, &questions[0], 1)
+	}
+}

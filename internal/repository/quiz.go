@@ -14,8 +14,8 @@ type QuizRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewQuizRepository(db *pgxpool.Pool) QuizRepository {
-	return QuizRepository{db: db}
+func NewQuizRepository(db *pgxpool.Pool) *QuizRepository {
+	return &QuizRepository{db: db}
 }
 
 func (r *QuizRepository) Create(ctx context.Context, s *entities.QuizSession) (int64, error) {

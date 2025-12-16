@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
@@ -18,6 +19,11 @@ type ProgressRepository interface {
 
 	GetStats(ctx context.Context, userID int64) (*repository.ProgressStats, error)
 	CountLearned(ctx context.Context, userID int64) (int, error)
+
+	Upsert(ctx context.Context, progress *entities.UserProgress) error
+	Get(ctx context.Context, userID int64, nameNumber int) (*entities.UserProgress, error)
+	GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error)
+	CountDue(ctx context.Context, userID int64) (int, error)
 }
 
 type ProgressService struct {
@@ -42,6 +48,39 @@ func (s *ProgressService) RecordReview(ctx context.Context, userID int64, nameNu
 
 func (s *ProgressService) GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error) {
 	return s.repository.GetNewNames(ctx, userID, limit)
+}
+
+// RecordReviewSRS updates progress taking SRS into account.
+func (s *ProgressService) RecordReviewSRS(ctx context.Context, userID int64, nameNumber int, quality entities.AnswerQuality) error {
+	now := time.Now()
+
+	p, err := s.repository.Get(ctx, userID, nameNumber)
+	if err != nil && !errors.Is(err, repository.ErrProgressNotFound) {
+		return err
+	}
+
+	if p == nil {
+		p = entities.NewUserProgress(userID, nameNumber)
+	}
+
+	p.UpdateSRS(quality, now)
+
+	// Increment the counter only if successful.
+	if quality != entities.QualityFail {
+		p.CorrectCount++
+	}
+
+	return s.repository.Upsert(ctx, p)
+}
+
+// GetNamesDueForReview - получить имена на повторение (SRS)
+func (s *ProgressService) GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error) {
+	return s.repository.GetNamesDueForReview(ctx, userID, limit)
+}
+
+// CountDue - сколько имён нужно повторить
+func (s *ProgressService) CountDue(ctx context.Context, userID int64) (int, error) {
+	return s.repository.CountDue(ctx, userID)
 }
 
 func (s *ProgressService) GetNamesToReview(ctx context.Context, userID int64, limit int) ([]int, error) {

@@ -45,6 +45,7 @@ var (
 	msgNameUnavailable     = "Не удалось получить имя. Попробуйте позже."
 	msgProgressUnavailable = "Не удалось получить прогресс. Попробуйте позже."
 	msgSettingsUnavailable = "Не удалось получить настройки. Попробуйте позже."
+	msgQuizUnavailable     = "Не удалось создать квиз, попробуйте позже."
 	msgInternalError       = "Что‑то пошло не так. Попробуйте позже."
 
 	msgUnknownCommand = "Неизвестная команда. Список доступных команд:\n\n/all — посмотреть все имена\n/random — получить случайное имя\n/range N M — посмотреть имена с N по M"
@@ -301,19 +302,6 @@ func buildQuizLengthKeyboard() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-func buildQuizModesKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(formatQuizMode("new_only"), "settings:quiz_mode:new_only"),
-		), tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(formatQuizMode("review_only"), "settings:quiz_mode:review_only"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(formatQuizMode("mixed"), "settings:quiz_mode:mixed"),
-		),
-	)
-}
-
 func buildToggleTransliterationKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -336,14 +324,67 @@ func buildToggleAudioKeyboard() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
+func buildQuizAnswerKeyboard(q *entities.Question, sessionID int64, questionNum int) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	for i, option := range q.Options {
+		callbackData := fmt.Sprintf("quiz:%d:%d:%d", sessionID, questionNum, i)
+		button := tgbotapi.NewInlineKeyboardButtonData(option, callbackData)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(button))
+	}
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+func buildQuizResultKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Новый квиз", "quiz:start"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Мой прогресс", "progress"),
+		),
+	)
+}
+
+func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🆕 Только новые", "settings:quiz_mode:new_only"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Только повторение", "settings:quiz_mode:review"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎲 Смешанный режим", "settings:quiz_mode:mixed"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Ежедневный", "settings:quiz_mode:daily"),
+		),
+	)
+}
+
+func buildQuizStartMessage(mode string) string {
+	modeText := formatQuizMode(mode)
+
+	return fmt.Sprintf(
+		"🎯 <b>Квиз начинается!</b>\n\n"+
+			"Режим: <b>%s</b>\n\n"+
+			"Выберите правильный вариант ответа для каждого вопроса.",
+		modeText,
+	)
+}
+
 func formatQuizMode(mode string) string {
 	switch mode {
 	case "new_only":
-		return "Только новые"
+		return "🆕 Только новые"
 	case "review_only":
-		return "Только повторение"
+		return "🔄 Только повторение"
 	case "mixed":
-		return "Смешанный"
+		return "🎲 Смешанный режим"
+	case "daily":
+		return "📅 Ежедневный"
 	default:
 		return mode
 	}
@@ -354,4 +395,61 @@ func formatBool(b bool) string {
 		return "Включено ✅"
 	}
 	return "Выключено ❌"
+}
+
+func formatQuizQuestion(q *entities.Question, currentNum, totalQuestions int) string {
+	return fmt.Sprintf(
+		"<b>Вопрос %d из %d</b>\n\n%s",
+		currentNum,
+		totalQuestions,
+		q.Question,
+	)
+}
+
+func formatQuizResult(session *entities.QuizSession) string {
+	percentage := float64(session.CorrectAnswers) / float64(session.TotalQuestions) * 100
+
+	var emoji string
+	var message string
+
+	switch {
+	case percentage >= 90:
+		emoji = "🌟"
+		message = "Отличный результат! Машаллах!"
+	case percentage >= 70:
+		emoji = "👍"
+		message = "Хороший результат!"
+	case percentage >= 50:
+		emoji = "💪"
+		message = "Неплохо, продолжайте!"
+	default:
+		emoji = "📚"
+		message = "Продолжайте изучать имена Аллаха!"
+	}
+
+	progressBar := buildProgressBar(session.CorrectAnswers, session.TotalQuestions, 10)
+
+	return fmt.Sprintf(
+		"%s <b>Квиз завершён!</b>\n\n"+
+			"<b>Результат:</b> %d/%d (%.0f%%)\n"+
+			"%s\n\n"+
+			"%s",
+		emoji,
+		session.CorrectAnswers,
+		session.TotalQuestions,
+		percentage,
+		progressBar,
+		message,
+	)
+}
+
+func formatAnswerFeedback(isCorrect bool, correctAnswer string) string {
+	if isCorrect {
+		return "✅ <b>Правильно!</b>"
+	}
+	return fmt.Sprintf(
+		"❌ <b>Неправильно</b>\n\n"+
+			"Правильный ответ: <b>%s</b>",
+		correctAnswer,
+	)
 }

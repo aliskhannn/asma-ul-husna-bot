@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 )
 
@@ -25,6 +27,12 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 
 	case strings.HasPrefix(data, "settings:"):
 		h.withCallbackErrorHandling(h.settingsCallbackHandler)(ctx, cb)
+
+	case strings.HasPrefix(data, "quiz:start"):
+		h.withCallbackErrorHandling(h.handleQuizStartCallback)(ctx, cb)
+
+	case strings.HasPrefix(data, "quiz:") && strings.Count(data, ":") == 3:
+		h.withCallbackErrorHandling(h.handleQuizAnswerCallback)(ctx, cb)
 
 	default:
 		h.logger.Warn("unknown callback data",
@@ -270,7 +278,7 @@ func (h *Handler) showQuizModesMenu(cb *tgbotapi.CallbackQuery) error {
 	message := "🎲 *Режим квиза*\n\n" +
 		"Выберите, какие имена включать в квиз: только новые, только на повторение или оба варианта."
 
-	kb := buildQuizModesKeyboard()
+	kb := buildQuizModeKeyboard()
 
 	edit := tgbotapi.NewEditMessageText(
 		cb.Message.Chat.ID,
@@ -394,7 +402,7 @@ func (h *Handler) applyQuizLength(ctx context.Context, cb *tgbotapi.CallbackQuer
 }
 
 func (h *Handler) applyQuizMode(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
-	quizMode := value // "new_only", "review_only", "mixed"
+	quizMode := value // "new_only", "review_only", "mixed", "daily"
 
 	if err := h.settingsService.UpdateQuizMode(ctx, cb.From.ID, quizMode); err != nil {
 		if errors.Is(err, repository.ErrSettingsNotFound) {
@@ -453,4 +461,130 @@ func (h *Handler) applyToggleAudio(ctx context.Context, cb *tgbotapi.CallbackQue
 	}
 
 	return h.showSettingsMenu(ctx, cb)
+}
+
+func (h *Handler) handleQuizAnswerCallback(ctx context.Context, callback *tgbotapi.CallbackQuery) error {
+	// quiz:{sessionID}:{questionNum}:{answerIndex}
+	parts := strings.Split(callback.Data, ":")
+	if len(parts) < 4 {
+		return fmt.Errorf("invalid quiz answer callback data")
+	}
+
+	sessionID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	questionNum, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return fmt.Errorf("invalid question number: %w", err)
+	}
+
+	answerIndex, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return fmt.Errorf("invalid answer index: %w", err)
+	}
+
+	userID := callback.From.ID
+	chatID := callback.Message.Chat.ID
+
+	session, err := h.quizService.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if questionNum != session.CurrentQuestionNum {
+		return h.answerCallback(callback.ID, "Вопрос уже был отвечен")
+	}
+
+	questions := h.getQuizQuestions(sessionID)
+	if questions == nil || questionNum > len(questions) {
+		return h.answerCallback(callback.ID, "Вопрос не найден")
+	}
+
+	question := &questions[questionNum-1]
+
+	isCorrect := answerIndex == question.CorrectIndex
+
+	// TODO: В будущем можно добавить inline-кнопки "Легко/Сложно" после правильного ответа
+	quality := entities.QualityGood
+	if !isCorrect {
+		quality = entities.QualityFail
+	}
+
+	if err := h.progressService.RecordReviewSRS(ctx, userID, question.NameNumber, quality); err != nil {
+		h.logger.Error("failed to record SRS review")
+		// Продолжаем выполнение, не критичная ошибка
+	}
+
+	answer, err := h.quizService.CheckAndSaveAnswer(ctx, userID, session, question, answerIndex)
+	if err != nil {
+		log.Printf("Failed to check answer: %v", err)
+		return h.answerCallback(callback.ID, "Ошибка при проверке ответа")
+	}
+
+	feedbackText := formatAnswerFeedback(answer.IsCorrect, question.CorrectAnswer)
+
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+	_, _ = h.bot.Send(deleteMsg)
+
+	feedbackMsg := newHTMLMessage(chatID, feedbackText)
+	_, err = h.bot.Send(feedbackMsg)
+	if err != nil {
+		log.Printf("Failed to send feedback: %v", err)
+	}
+
+	if session.SessionStatus == "completed" {
+		return h.sendQuizResults(chatID, session)
+	}
+
+	if session.CurrentQuestionNum <= len(questions) {
+		nextQuestion := &questions[session.CurrentQuestionNum-1]
+		err = h.sendQuizQuestion(chatID, session, nextQuestion, session.CurrentQuestionNum)
+		if err != nil {
+			log.Printf("Failed to send next question: %v", err)
+		}
+	}
+
+	return h.answerCallback(callback.ID, "")
+}
+
+func (h *Handler) handleQuizStartCallback(ctx context.Context, callback *tgbotapi.CallbackQuery) error {
+	chatID := callback.Message.Chat.ID
+	userID := callback.From.ID
+
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+	_, _ = h.bot.Send(deleteMsg)
+
+	settings, err := h.settingsService.GetOrCreate(ctx, userID)
+	if err != nil {
+		msg := newHTMLMessage(chatID, msgSettingsUnavailable)
+		return h.send(msg)
+	}
+	mode := settings.QuizMode
+
+	session, questions, err := h.quizService.GenerateQuiz(ctx, userID, mode)
+	if err != nil || len(questions) == 0 {
+		msg := newHTMLMessage(chatID, msgQuizUnavailable)
+		return h.send(msg)
+	}
+
+	h.storeQuizQuestions(session.ID, questions)
+
+	startMsg := newHTMLMessage(chatID, buildQuizStartMessage(mode))
+	if err := h.send(startMsg); err != nil {
+		return err
+	}
+
+	if err := h.sendQuizQuestion(chatID, session, &questions[0], 1); err != nil {
+		return err
+	}
+
+	return h.answerCallback(callback.ID, "")
+}
+
+func (h *Handler) answerCallback(callbackID, text string) error {
+	callback := tgbotapi.NewCallback(callbackID, text)
+	_, err := h.bot.Request(callback)
+	return err
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/logger"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/storage"
 )
 
 func main() {
@@ -59,6 +60,10 @@ func main() {
 			Description: "Показать прогресс",
 		},
 		{
+			Command:     "quiz",
+			Description: "Начать квиз",
+		},
+		{
 			Command:     "settings",
 			Description: "Настройки",
 		},
@@ -91,6 +96,8 @@ func main() {
 		)
 	}
 
+	nameService := service.NewNameService(nameRepo)
+
 	poolConfig, err := pgxpool.ParseConfig(cfg.DB.DSN())
 	if err != nil {
 		lg.Fatal("failed to parse db config",
@@ -107,7 +114,6 @@ func main() {
 
 	userRepo := repository.NewUserRepository(pool)
 
-	nameService := service.NewNameService(nameRepo)
 	userService := service.NewUserService(userRepo)
 
 	progressRepo := repository.NewProgressRepository(pool)
@@ -116,6 +122,12 @@ func main() {
 	progressService := service.NewProgressService(progressRepo)
 	settingsService := service.NewSettingsService(settingsRepo)
 
+	quizRepo := repository.NewQuizRepository(pool)
+
+	quizService := service.NewQuizService(nameRepo, progressRepo, quizRepo, settingsRepo)
+
+	quizStorage := storage.NewQuizStorage()
+
 	handler := telegram.NewHandler(
 		bot,
 		lg,
@@ -123,6 +135,8 @@ func main() {
 		userService,
 		progressService,
 		settingsService,
+		quizService,
+		quizStorage,
 	)
 	if err := handler.Run(ctx); err != nil {
 		lg.Error("handler run failed",
