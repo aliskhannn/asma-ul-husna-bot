@@ -9,6 +9,7 @@ type UserSettings struct {
 	QuizMode            string
 	ShowTransliteration bool
 	ShowAudio           bool
+	LanguageCode        *string // nullable, "ru", "en"
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

@@ -19,14 +19,12 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 
 func (r *UserRepository) SaveUser(ctx context.Context, user *entities.User) error {
 	query := `
-	INSERT INTO users (id, first_name, last_name, username, language_code)
-	VALUES ($1, $2, $3, $4, $5)
+	INSERT INTO users (id)
+	VALUES ($1)
 	RETURNING is_active, created_at
 	
 	`
-	err := r.db.QueryRow(
-		ctx, query, user.ID, user.FirstName, user.LastName, user.Username, user.LanguageCode,
-	).Scan(&user.IsActive, &user.CreatedAt)
+	err := r.db.QueryRow(ctx, query, user.ID).Scan(&user.IsActive, &user.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save user: %w", err)
 	}

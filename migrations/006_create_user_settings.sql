@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS user_settings
     quiz_mode varchar(20) DEFAULT 'mixed' CHECK (quiz_mode IN ('new_only', 'review_only', 'mixed')),
     show_transliteration boolean DEFAULT TRUE,
     show_audio boolean DEFAULT TRUE,
+    language_code varchar(5) NOT NULL DEFAULT 'ru',
     created_at timestamptz DEFAULT NOW(),
     updated_at timestamptz DEFAULT NOW(),
 

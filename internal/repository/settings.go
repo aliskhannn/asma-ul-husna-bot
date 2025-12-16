@@ -25,8 +25,8 @@ func NewSettingsRepository(db *pgxpool.Pool) *SettingsRepository {
 func (r *SettingsRepository) Create(ctx context.Context, userID int64) error {
 	query := `
         INSERT INTO user_settings (user_id, names_per_day, quiz_length, quiz_mode, 
-                                    show_transliteration, show_audio, created_at, updated_at)
-        VALUES ($1, 1, 10, 'mixed', true, true, NOW(), NOW())
+                                    show_transliteration, show_audio, language_code, created_at, updated_at)
+        VALUES ($1, 1, 10, 'mixed', true, true, 'ru', NOW(), NOW())
         ON CONFLICT (user_id) DO NOTHING
     `
 
@@ -43,7 +43,7 @@ func (r *SettingsRepository) Create(ctx context.Context, userID int64) error {
 func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*entities.UserSettings, error) {
 	query := `
         SELECT user_id, names_per_day, quiz_length, quiz_mode, 
-               show_transliteration, show_audio, created_at, updated_at
+               show_transliteration, show_audio, language_code, created_at, updated_at
         FROM user_settings
         WHERE user_id = $1
     `
@@ -56,6 +56,7 @@ func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*en
 		&settings.QuizMode,
 		&settings.ShowTransliteration,
 		&settings.ShowAudio,
+		&settings.LanguageCode,
 		&settings.CreatedAt,
 		&settings.UpdatedAt,
 	)
@@ -78,6 +79,7 @@ func (r *SettingsRepository) Update(ctx context.Context, settings *entities.User
             quiz_mode = $4,
             show_transliteration = $5,
             show_audio = $6,
+            language_code = $7,
             updated_at = NOW()
         WHERE user_id = $1
     `
@@ -89,6 +91,7 @@ func (r *SettingsRepository) Update(ctx context.Context, settings *entities.User
 		settings.QuizMode,
 		settings.ShowTransliteration,
 		settings.ShowAudio,
+		settings.LanguageCode,
 	)
 	if err != nil {
 		return fmt.Errorf("update settings: %w", err)
