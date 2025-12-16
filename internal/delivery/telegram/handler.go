@@ -2,13 +2,35 @@ package telegram
 
 import (
 	"context"
-	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
+
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
+
+type UserService interface {
+	EnsureUser(ctx context.Context, userID int64, firstName, lastName string, username string, languageCode string) error
+}
+
+type NameService interface {
+	GetByNumber(ctx context.Context, number int) (entities.Name, error)
+	GetRandom(ctx context.Context) (entities.Name, error)
+	GetAll(ctx context.Context) ([]entities.Name, error)
+}
+
+type ProgressService interface {
+	GetProgressSummary(ctx context.Context, userID int64, namesPerDay int) (*service.ProgressSummary, error)
+}
+
+type SettingsService interface {
+	GetOrCreate(ctx context.Context, userID int64) (*entities.UserSettings, error)
+}
 
 type Handler struct {
 	bot             *tgbotapi.BotAPI
+	logger          *zap.Logger
 	nameService     NameService
 	userService     UserService
 	progressService ProgressService
@@ -17,6 +39,7 @@ type Handler struct {
 
 func NewHandler(
 	bot *tgbotapi.BotAPI,
+	logger *zap.Logger,
 	nameService NameService,
 	userService UserService,
 	progressService ProgressService,
@@ -24,6 +47,7 @@ func NewHandler(
 ) *Handler {
 	return &Handler{
 		bot:             bot,
+		logger:          logger,
 		nameService:     nameService,
 		userService:     userService,
 		progressService: progressService,
@@ -32,6 +56,9 @@ func NewHandler(
 }
 
 func (h *Handler) Run(ctx context.Context) error {
+	h.logger.Info("telegram handler started")
+	defer h.logger.Info("telegram handler stopped")
+
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
@@ -49,13 +76,23 @@ func (h *Handler) Run(ctx context.Context) error {
 
 func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	if update.CallbackQuery != nil {
+		h.logger.Debug("callback received",
+			zap.Int64("user_id", update.CallbackQuery.From.ID),
+			zap.String("data", update.CallbackQuery.Data),
+		)
 		h.handleCallback(ctx, update.CallbackQuery)
 		return
 	}
 
 	if update.Message == nil {
+		h.logger.Debug("update without message and callback")
 		return
 	}
+
+	h.logger.Debug("update received",
+		zap.Int64("chat_id", update.Message.Chat.ID),
+		zap.String("text", update.Message.Text),
+	)
 
 	from := update.Message.From
 	err := h.userService.EnsureUser(
@@ -67,7 +104,10 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		from.LanguageCode,
 	)
 	if err != nil {
-		log.Println(err)
+		h.logger.Error("failed to ensure user",
+			zap.Int64("user_id", from.ID),
+			zap.Error(err),
+		)
 	}
 
 	chatID := update.Message.Chat.ID
@@ -80,7 +120,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			h.send(msg)
 
 		case "random":
-			h.handleRandomCommand(ctx, chatID)
+			_ = h.withErrorHandling(h.randomHandler())(ctx, chatID)
 
 		case "all":
 			h.handleAllCommand(ctx, chatID)
@@ -89,10 +129,10 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			h.handleRangeCommand(ctx, chatID, update.Message.CommandArguments())
 
 		case "progress":
-			h.handleProgressCommand(ctx, from.ID)
+			_ = h.withErrorHandling(h.progressHandler(from.ID))(ctx, chatID)
 
 		case "settings":
-			h.handleSettingsCommand(ctx, chatID, from.ID)
+			_ = h.withErrorHandling(h.settingsHandler(from.ID))(ctx, chatID)
 
 		default:
 			msg.Text = msgUnknownCommand
@@ -102,11 +142,18 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	h.handleNumberCommand(ctx, chatID, update.Message.Text)
+	_ = h.withErrorHandling(h.numberHandler(update.Message.Text))(ctx, chatID)
+}
+
+func (h *Handler) sendError(chatID int64, err string) {
+	msg := newHTMLMessage(chatID, err)
+	h.send(msg)
 }
 
 func (h *Handler) send(c tgbotapi.Chattable) {
 	if _, err := h.bot.Send(c); err != nil {
-		log.Printf("failed to send telegram message: %v", err)
+		h.logger.Error("failed to send telegram message",
+			zap.Error(err),
+		)
 	}
 }

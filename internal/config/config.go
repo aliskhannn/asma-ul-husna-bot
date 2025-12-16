@@ -12,6 +12,7 @@ import (
 var ErrMissingEnvironmentVariables = errors.New("missing required environment variables")
 
 type Config struct {
+	ENV              string `mapstructure:"env"`
 	TelegramAPIToken string
 	DB               DB `mapstructure:"database"`
 }
@@ -57,6 +58,7 @@ func Load() (*Config, error) {
 		return nil, ErrMissingEnvironmentVariables
 	}
 
+	cfg.ENV = os.Getenv("APP_ENV")
 	cfg.TelegramAPIToken = token
 	cfg.DB.User = os.Getenv("DB_USER")
 	cfg.DB.Password = os.Getenv("DB_PASSWORD")

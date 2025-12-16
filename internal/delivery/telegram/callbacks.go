@@ -3,11 +3,11 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/zap"
 )
 
 func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
@@ -23,6 +23,9 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	case strings.HasPrefix(cb.Data, "name:"):
 		text, kb, ok = h.handleAllCallback(ctx, cb)
 	default:
+		h.logger.Warn("unknown callback data prefix",
+			zap.String("data", cb.Data),
+		)
 		return
 	}
 
@@ -41,7 +44,10 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	// Remove the user's "clock".
 	answer := tgbotapi.NewCallback(cb.ID, "")
 	if _, err := h.bot.Request(answer); err != nil {
-		log.Println("callback answer error:", err)
+		h.logger.Error("callback answer error",
+			zap.Error(err),
+			zap.String("data", cb.Data),
+		)
 	}
 }
 
@@ -49,7 +55,10 @@ func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQu
 	pageStr := strings.TrimPrefix(cb.Data, "name:")
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page < 0 {
-		log.Printf("invalid page in callback: %s", cb.Data)
+		h.logger.Warn("invalid page in callback",
+			zap.String("data", cb.Data),
+			zap.Error(err),
+		)
 		return "", nil, false
 	}
 
@@ -60,7 +69,10 @@ func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQu
 
 	text, totalPages := buildNamesPage(names, page)
 	if totalPages == 0 || page >= totalPages {
-		log.Printf("page out of range: %d (totalPages=%d)", page, totalPages)
+		h.logger.Warn("page out of range",
+			zap.Int("page", page),
+			zap.Int("total_pages", totalPages),
+		)
 		return "", nil, false
 	}
 
@@ -75,7 +87,9 @@ func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQu
 func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) (string, *tgbotapi.InlineKeyboardMarkup, bool) {
 	parts := strings.Split(cb.Data, ":")
 	if len(parts) != 4 {
-		log.Printf("invalid range callback data: %s", cb.Data)
+		h.logger.Warn("invalid range callback data",
+			zap.String("data", cb.Data),
+		)
 		return "", nil, false
 	}
 
@@ -83,7 +97,12 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 	from, err2 := strconv.Atoi(parts[2])
 	to, err3 := strconv.Atoi(parts[3])
 	if err1 != nil || err2 != nil || err3 != nil || page < 0 || from < 1 || to > 99 || from > to {
-		log.Printf("invalid range callback values: %s", cb.Data)
+		h.logger.Warn("invalid range callback values",
+			zap.String("data", cb.Data),
+			zap.Error(err1),
+			zap.Error(err2),
+			zap.Error(err3),
+		)
 		return "", nil, false
 	}
 
@@ -95,7 +114,12 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 	pages := buildRangePages(names, from, to)
 	totalPages := len(pages)
 	if totalPages == 0 || page >= totalPages {
-		log.Printf("range page out of range: %d (totalPages=%d)", page, totalPages)
+		h.logger.Warn("range page out of range",
+			zap.Int("page", page),
+			zap.Int("total_pages", totalPages),
+			zap.Int("from", from),
+			zap.Int("to", to),
+		)
 		return "", nil, false
 	}
 

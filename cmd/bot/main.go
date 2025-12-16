@@ -8,9 +8,11 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/config"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/delivery/telegram"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/logger"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
@@ -18,13 +20,20 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal()
 	}
+
+	lg, err := logger.New(cfg)
+	if err != nil {
+		panic(err)
+	}
+	defer lg.Sync()
 
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramAPIToken)
 	if err != nil {
-		// TODO: replace standard logger with Zap Logger.
-		log.Panic(err)
+		lg.Fatal("failed to create bot",
+			zap.Error(err),
+		)
 	}
 
 	// Set commands.
@@ -61,11 +70,15 @@ func main() {
 
 	_, err = bot.Request(tgbotapi.NewSetMyCommands(commands...))
 	if err != nil {
-		log.Printf("Failed to set bot commands: %v", err)
+		lg.Warn("failed to set bot commands",
+			zap.Error(err),
+		)
 	}
 
 	bot.Debug = true
-	log.Printf("Authorized on account %s", bot.Self.UserName)
+	lg.Info("authorized on account",
+		zap.String("username", bot.Self.UserName),
+	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -73,16 +86,22 @@ func main() {
 	// Initialize repositories and use cases.
 	nameRepo, err := repository.NewNameRepository("assets/data/names.json")
 	if err != nil {
-		log.Fatal(err)
+		lg.Fatal("failed to init name repository",
+			zap.Error(err),
+		)
 	}
 
 	poolConfig, err := pgxpool.ParseConfig(cfg.DB.DSN())
 	if err != nil {
-		log.Fatal(err)
+		lg.Fatal("failed to parse db config",
+			zap.Error(err),
+		)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		log.Fatal(err)
+		lg.Fatal("failed to connect to db",
+			zap.Error(err),
+		)
 	}
 	defer pool.Close()
 
@@ -99,15 +118,18 @@ func main() {
 
 	handler := telegram.NewHandler(
 		bot,
+		lg,
 		nameService,
 		userService,
 		progressService,
 		settingsService,
 	)
 	if err := handler.Run(ctx); err != nil {
-		log.Panic(err)
+		lg.Error("handler run failed",
+			zap.Error(err),
+		)
 	}
 
 	<-ctx.Done()
-	log.Println("shutdown signal received")
+	lg.Info("shutdown signal received")
 }

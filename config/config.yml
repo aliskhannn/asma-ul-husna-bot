@@ -1,3 +1,5 @@
+env: "development" # development, production, local
+
 database:
   host: "db"
   port: "5432"
