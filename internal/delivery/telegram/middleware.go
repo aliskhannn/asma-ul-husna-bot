@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 )
 
@@ -19,5 +20,22 @@ func (h *Handler) withErrorHandling(fn HandlerFunc) HandlerFunc {
 			return nil
 		}
 		return nil
+	}
+}
+
+type CallbackHandlerFunc func(ctx context.Context, cb *tgbotapi.CallbackQuery) error
+
+func (h *Handler) withCallbackErrorHandling(fn CallbackHandlerFunc) func(ctx context.Context, cb *tgbotapi.CallbackQuery) {
+	return func(ctx context.Context, cb *tgbotapi.CallbackQuery) {
+		if err := fn(ctx, cb); err != nil {
+			h.logger.Error("callback handler error",
+				zap.Error(err),
+				zap.String("data", cb.Data),
+				zap.Int64("user_id", cb.From.ID),
+			)
+			if cb.Message != nil {
+				h.sendError(cb.Message.Chat.ID, msgInternalError)
+			}
+		}
 	}
 }

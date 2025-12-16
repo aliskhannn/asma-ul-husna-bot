@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
@@ -206,21 +205,17 @@ func paginateNames(names []*entities.Name, page, namesPerPage int) []*entities.N
 	return names[start:end]
 }
 
-func (h *Handler) getAllNames(ctx context.Context) []*entities.Name {
+func (h *Handler) getAllNames(ctx context.Context) ([]*entities.Name, error) {
 	names, err := h.nameService.GetAll(ctx)
 	if err != nil {
-		h.logger.Error("failed to get all names",
-			zap.Error(err),
-		)
-		return nil
+		return nil, err
 	}
 
 	if len(names) == 0 {
-		h.logger.Warn("no names found")
-		return nil
+		return nil, nil
 	}
 
-	return names
+	return names, nil
 }
 
 // buildProgressBar creates ASCII progress bar.
@@ -254,6 +249,12 @@ func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔤 Транслитерация", "settings:toggle_transliteration"),
 			tgbotapi.NewInlineKeyboardButtonData("🔊 Аудио", "settings:toggle_audio"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔔 Напоминания", "reminder_settings"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад", "main_menu"),
 		),
 	)
 }

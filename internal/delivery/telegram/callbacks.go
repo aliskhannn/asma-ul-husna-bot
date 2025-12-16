@@ -11,35 +11,17 @@ import (
 )
 
 func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
-	var (
-		text string
-		kb   *tgbotapi.InlineKeyboardMarkup
-		ok   bool
-	)
-
 	switch {
 	case strings.HasPrefix(cb.Data, "range:"):
-		text, kb, ok = h.handleRangeCallback(ctx, cb)
+		h.withCallbackErrorHandling(h.rangeCallbackHandler)(ctx, cb)
 	case strings.HasPrefix(cb.Data, "name:"):
-		text, kb, ok = h.handleAllCallback(ctx, cb)
+		h.withCallbackErrorHandling(h.allCallbackHandler)(ctx, cb)
 	default:
 		h.logger.Warn("unknown callback data prefix",
 			zap.String("data", cb.Data),
 		)
 		return
 	}
-
-	if !ok {
-		return
-	}
-
-	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
-	edit.ParseMode = tgbotapi.ModeHTML
-	if kb != nil {
-		edit.ReplyMarkup = kb
-	}
-
-	h.send(edit)
 
 	// Remove the user's "clock".
 	answer := tgbotapi.NewCallback(cb.ID, "")
@@ -51,7 +33,7 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	}
 }
 
-func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) (string, *tgbotapi.InlineKeyboardMarkup, bool) {
+func (h *Handler) allCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	pageStr := strings.TrimPrefix(cb.Data, "name:")
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page < 0 {
@@ -59,12 +41,17 @@ func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQu
 			zap.String("data", cb.Data),
 			zap.Error(err),
 		)
-		return "", nil, false
+		return nil
 	}
 
-	names := h.getAllNames(ctx)
+	names, err := h.getAllNames(ctx)
+	if err != nil {
+		return err
+	}
 	if names == nil {
-		return "", nil, false
+		msg := newHTMLMessage(cb.Message.Chat.ID, msgNameUnavailable)
+		h.send(msg)
+		return nil
 	}
 
 	text, totalPages := buildNamesPage(names, page)
@@ -73,7 +60,7 @@ func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQu
 			zap.Int("page", page),
 			zap.Int("total_pages", totalPages),
 		)
-		return "", nil, false
+		return nil
 	}
 
 	prevData := fmt.Sprintf("name:%d", page-1)
@@ -81,16 +68,23 @@ func (h *Handler) handleAllCallback(ctx context.Context, cb *tgbotapi.CallbackQu
 
 	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 
-	return text, kb, true
+	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ParseMode = tgbotapi.ModeHTML
+	if kb != nil {
+		edit.ReplyMarkup = kb
+	}
+
+	h.send(edit)
+	return nil
 }
 
-func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) (string, *tgbotapi.InlineKeyboardMarkup, bool) {
+func (h *Handler) rangeCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	parts := strings.Split(cb.Data, ":")
 	if len(parts) != 4 {
 		h.logger.Warn("invalid range callback data",
 			zap.String("data", cb.Data),
 		)
-		return "", nil, false
+		return nil
 	}
 
 	page, err1 := strconv.Atoi(parts[1])
@@ -103,12 +97,17 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 			zap.Error(err2),
 			zap.Error(err3),
 		)
-		return "", nil, false
+		return nil
 	}
 
-	names := h.getAllNames(ctx)
+	names, err := h.getAllNames(ctx)
+	if err != nil {
+		return err
+	}
 	if names == nil {
-		return "", nil, false
+		msg := newHTMLMessage(cb.Message.Chat.ID, msgNameUnavailable)
+		h.send(msg)
+		return nil
 	}
 
 	pages := buildRangePages(names, from, to)
@@ -120,7 +119,7 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 			zap.Int("from", from),
 			zap.Int("to", to),
 		)
-		return "", nil, false
+		return nil
 	}
 
 	text := pages[page]
@@ -130,5 +129,12 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 
 	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 
-	return text, kb, true
+	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ParseMode = tgbotapi.ModeHTML
+	if kb != nil {
+		edit.ReplyMarkup = kb
+	}
+
+	h.send(edit)
+	return nil
 }
