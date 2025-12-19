@@ -6,4 +6,4 @@ database:
   name: "husna_db"
   ssl_mode: "disable"
   max_connections: 20
-  connection_timeout: "30s"
+  max_conn_lifetime: "30s"

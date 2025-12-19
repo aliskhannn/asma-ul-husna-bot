@@ -18,26 +18,24 @@ type Config struct {
 }
 
 type DB struct {
-	URL               string
-	User              string
-	Password          string
-	Host              string        `mapstructure:"host"`
-	Port              string        `mapstructure:"port"`
-	Name              string        `mapstructure:"name"`
-	SSLMode           string        `mapstructure:"ssl_mode"`
-	MaxConnections    int           `mapstructure:"max_connections"`
-	ConnectionTimeout time.Duration `mapstructure:"connection_timeout"`
+	URL             string
+	User            string
+	Password        string
+	Host            string        `mapstructure:"host"`
+	Port            string        `mapstructure:"port"`
+	Name            string        `mapstructure:"name"`
+	SSLMode         string        `mapstructure:"ssl_mode"`
+	MaxConnections  int           `mapstructure:"max_connections"`
+	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
 }
 
 func (n DB) DSN() string {
 	if n.URL != "" {
-		return fmt.Sprintf("%s&pool_max_conns=%d&pool_max_conn_lifetime=%s",
-			n.URL, n.MaxConnections, n.ConnectionTimeout.String(),
-		)
+		return n.URL
 	}
 	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=%s&pool_max_conns=%d&pool_max_conn_lifetime=%s",
-		n.User, n.Password, n.Host, n.Port, n.Name, n.SSLMode, n.MaxConnections, n.ConnectionTimeout.String(),
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		n.User, n.Password, n.Host, n.Port, n.Name, n.SSLMode,
 	)
 }
 

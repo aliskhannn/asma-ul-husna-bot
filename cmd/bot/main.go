@@ -104,6 +104,10 @@ func main() {
 			zap.Error(err),
 		)
 	}
+
+	poolConfig.MaxConns = int32(cfg.DB.MaxConnections)
+	poolConfig.MaxConnLifetime = cfg.DB.MaxConnLifetime
+
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		lg.Fatal("failed to connect to db",
