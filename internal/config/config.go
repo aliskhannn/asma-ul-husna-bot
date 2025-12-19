@@ -18,6 +18,7 @@ type Config struct {
 }
 
 type DB struct {
+	URL               string
 	User              string
 	Password          string
 	Host              string        `mapstructure:"host"`
@@ -29,6 +30,11 @@ type DB struct {
 }
 
 func (n DB) DSN() string {
+	if n.URL != "" {
+		return fmt.Sprintf("%s&pool_max_conns=%d&pool_max_conn_lifetime=%s",
+			n.URL, n.MaxConnections, n.ConnectionTimeout.String(),
+		)
+	}
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s&pool_max_conns=%d&pool_max_conn_lifetime=%s",
 		n.User, n.Password, n.Host, n.Port, n.Name, n.SSLMode, n.MaxConnections, n.ConnectionTimeout.String(),
@@ -50,18 +56,26 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
 
+	cfg.ENV = os.Getenv("APP_ENV")
+
 	token := os.Getenv("TELEGRAM_API_TOKEN")
+	if token == "" {
+		return nil, ErrMissingEnvironmentVariables
+	}
+	cfg.TelegramAPIToken = token
+
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		cfg.DB.URL = dbURL
+		return &cfg, nil
+	}
+
 	user := os.Getenv("DB_USER")
 	password := os.Getenv("DB_PASSWORD")
-
-	if token == "" || user == "" || password == "" {
+	if user == "" || password == "" {
 		return nil, ErrMissingEnvironmentVariables
 	}
 
-	cfg.ENV = os.Getenv("APP_ENV")
-	cfg.TelegramAPIToken = token
-	cfg.DB.User = os.Getenv("DB_USER")
-	cfg.DB.Password = os.Getenv("DB_PASSWORD")
-
+	cfg.DB.User = user
+	cfg.DB.Password = password
 	return &cfg, nil
 }
