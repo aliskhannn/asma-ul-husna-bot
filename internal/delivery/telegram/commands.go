@@ -2,25 +2,23 @@ package telegram
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
+// numberHandler handles numeric input (name by number).
 func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
-		msg := newHTMLMessage(chatID, "")
-
 		n, err := strconv.Atoi(numStr)
 		if err != nil {
-			msg.Text = msgIncorrectNameNumber
+			msg := newPlainMessage(chatID, msgIncorrectNameNumber)
 			return h.send(msg)
 		}
 
 		if n < 1 || n > 99 {
-			msg.Text = msgOutOfRangeNumber
+			msg := newPlainMessage(chatID, msgOutOfRangeNumber)
 			return h.send(msg)
 		}
 
@@ -31,8 +29,7 @@ func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 			return err
 		}
 
-		err = h.send(msg)
-		if err != nil {
+		if err = h.send(msg); err != nil {
 			return err
 		}
 
@@ -48,6 +45,7 @@ func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 	}
 }
 
+// randomHandler handles /random command.
 func (h *Handler) randomHandler(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		name, err := h.nameService.GetRandom(ctx)
@@ -55,7 +53,7 @@ func (h *Handler) randomHandler(userID int64) HandlerFunc {
 			return err
 		}
 
-		msg := newHTMLMessage(chatID, formatNameMessage(name))
+		msg := newMessage(chatID, formatNameMessage(name))
 		if err = h.send(msg); err != nil {
 			return err
 		}
@@ -75,25 +73,24 @@ func (h *Handler) randomHandler(userID int64) HandlerFunc {
 	}
 }
 
+// allCommandHandler handles /all command.
 func (h *Handler) allCommandHandler(ctx context.Context, chatID int64) error {
-	msg := newHTMLMessage(chatID, "")
-
 	names, err := h.getAllNames(ctx)
 	if err != nil {
 		return err
 	}
+
 	if names == nil {
-		msg.Text = msgNameUnavailable
+		msg := newPlainMessage(chatID, msgNameUnavailable)
 		return h.send(msg)
 	}
 
 	page := 0
 	text, totalPages := buildNamesPage(names, page)
+	prevData := buildNameCallback(page - 1)
+	nextData := buildNameCallback(page + 1)
 
-	prevData := fmt.Sprintf("name:%d", page-1)
-	nextData := fmt.Sprintf("name:%d", page+1)
-
-	msg.Text = text
+	msg := newMessage(chatID, text)
 	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 	if kb != nil {
 		msg.ReplyMarkup = *kb
@@ -102,39 +99,40 @@ func (h *Handler) allCommandHandler(ctx context.Context, chatID int64) error {
 	return h.send(msg)
 }
 
+// rangeCommandHandler handles /range command.
 func (h *Handler) rangeCommandHandler(argsStr string) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		args := strings.Fields(argsStr)
 		if len(args) != 2 {
-			return h.send(newHTMLMessage(chatID, msgUseRange))
+			return h.send(newPlainMessage(chatID, msgUseRange))
 		}
 
 		from, errFrom := strconv.Atoi(args[0])
 		to, errTo := strconv.Atoi(args[1])
 		if errFrom != nil || errTo != nil || from < 1 || to > 99 || from > to {
-			return h.send(newHTMLMessage(chatID, msgInvalidRange))
+			return h.send(newPlainMessage(chatID, msgInvalidRange))
 		}
 
 		names, err := h.getAllNames(ctx)
 		if err != nil {
 			return err
 		}
+
 		if names == nil {
-			return h.send(newHTMLMessage(chatID, msgNameUnavailable))
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 		}
 
 		pages := buildRangePages(names, from, to)
 		if len(pages) == 0 {
-			return h.send(newHTMLMessage(chatID, msgNameUnavailable))
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 		}
 
 		page := 0
 		totalPages := len(pages)
+		prevData := buildRangeCallback(page-1, from, to)
+		nextData := buildRangeCallback(page+1, from, to)
 
-		prevData := fmt.Sprintf("range:%d:%d:%d", page-1, from, to)
-		nextData := fmt.Sprintf("range:%d:%d:%d", page+1, from, to)
-
-		msg := newHTMLMessage(chatID, pages[page])
+		msg := newMessage(chatID, pages[page])
 		kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 		if kb != nil {
 			msg.ReplyMarkup = *kb
@@ -144,98 +142,58 @@ func (h *Handler) rangeCommandHandler(argsStr string) HandlerFunc {
 	}
 }
 
+// progressHandler handles /progress command.
 func (h *Handler) progressHandler(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
-		msg := newHTMLMessage(userID, "")
-
-		settings, err := h.settingsService.GetOrCreate(ctx, userID)
+		text, keyboard, err := h.RenderProgress(ctx, userID, true)
 		if err != nil {
-			msg.Text = msgSettingsUnavailable
+			msg := newPlainMessage(chatID, msgProgressUnavailable)
 			return h.send(msg)
 		}
 
-		summary, err := h.progressService.GetProgressSummary(ctx, userID, settings.NamesPerDay)
-		if err != nil {
-			msg.Text = msgProgressUnavailable
-			return h.send(msg)
+		msg := newMessage(chatID, text)
+		if keyboard != nil {
+			msg.ReplyMarkup = *keyboard
 		}
 
-		progressBar := buildProgressBar(summary.Learned, 99, 20)
-
-		text := fmt.Sprintf(
-			"<b>📊 Ваш прогресс</b>\n\n"+
-				"%s\n\n"+
-				"✅ <b>Выучено:</b> %d / 99 (%.1f%%)\n"+
-				"📖 <b>В процессе:</b> %d\n"+
-				"⏳ <b>Не начато:</b> %d\n\n"+
-				"🎯 <b>Точность:</b> %.1f%%\n"+
-				"📅 <b>Имён в день:</b> %d\n"+
-				"⏰ <b>Дней до завершения:</b> %d\n",
-			progressBar,
-			summary.Learned,
-			summary.Percentage,
-			summary.InProgress,
-			summary.NotStarted,
-			summary.Accuracy,
-			settings.NamesPerDay,
-			summary.DaysToComplete,
-		)
-
-		msg.Text = text
 		return h.send(msg)
 	}
 }
 
+// settingsHandler handles /settings command.
 func (h *Handler) settingsHandler(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
-		msg := newHTMLMessage(chatID, "")
-
-		settings, err := h.settingsService.GetOrCreate(ctx, userID)
+		text, keyboard, err := h.RenderSettings(ctx, userID)
 		if err != nil {
-			msg.Text = msgSettingsUnavailable
+			msg := newPlainMessage(chatID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
 
-		text := fmt.Sprintf(
-			"<b>⚙️ Настройки</b>\n\n"+
-				"📚 <b>Имён в день:</b> %d\n"+
-				"📝 <b>Длина квиза:</b> %d\n"+
-				"🎲 <b>Режим квиза:</b> %s\n"+
-				"🔤 <b>Транслитерация:</b> %s\n"+
-				"🔊 <b>Аудио:</b> %s\n",
-			settings.NamesPerDay,
-			settings.QuizLength,
-			formatQuizMode(settings.QuizMode),
-			formatBool(settings.ShowTransliteration),
-			formatBool(settings.ShowAudio),
-		)
-
-		kb := buildSettingsKeyboard()
-
-		msg.Text = text
-		msg.ReplyMarkup = kb
+		msg := newMessage(chatID, text)
+		msg.ReplyMarkup = keyboard
 		return h.send(msg)
 	}
 }
 
+// quizHandler handles /quiz command.
 func (h *Handler) quizHandler(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
-			msg := newHTMLMessage(chatID, msgSettingsUnavailable)
+			msg := newPlainMessage(chatID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
 
 		mode := settings.QuizMode
 		session, questions, err := h.quizService.GenerateQuiz(ctx, userID, mode)
 		if err != nil || len(questions) == 0 {
-			msg := newHTMLMessage(chatID, msgQuizUnavailable)
+			msg := newPlainMessage(chatID, msgQuizUnavailable)
 			return h.send(msg)
 		}
 
 		h.storeQuizQuestions(session.ID, questions)
 
-		startMsg := newHTMLMessage(chatID, buildQuizStartMessage(mode))
+		startMsg := newMessage(chatID, buildQuizStartMessage(mode))
 		if err := h.send(startMsg); err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -136,12 +137,12 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	chatID := update.Message.Chat.ID
-	msg := newHTMLMessage(chatID, "")
+	msg := newMessage(chatID, "")
 
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
-			msg.Text = msgWelcome
+			msg.Text = WelcomeMarkdownV2()
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send start message",
 					zap.Error(err),
@@ -185,7 +186,13 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 func (h *Handler) send(c tgbotapi.Chattable) error {
 	_, err := h.bot.Send(c)
-	return err
+	if err != nil {
+		if strings.Contains(err.Error(), "message is not modified") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (h *Handler) getCurrentQuestion(sessionID int64, currentNum int) (*entities.Question, bool) {
@@ -211,7 +218,7 @@ func (h *Handler) sendQuizQuestion(
 	questionText := formatQuizQuestion(question, currentNum, session.TotalQuestions)
 	keyboard := buildQuizAnswerKeyboard(question, session.ID, currentNum)
 
-	msg := newHTMLMessage(chatID, questionText)
+	msg := newMessage(chatID, questionText)
 	msg.ReplyMarkup = keyboard
 
 	return h.send(msg)
@@ -221,7 +228,7 @@ func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) e
 	resultText := formatQuizResult(session)
 	keyboard := buildQuizResultKeyboard()
 
-	msg := newHTMLMessage(chatID, resultText)
+	msg := newMessage(chatID, resultText)
 	msg.ReplyMarkup = keyboard
 
 	_, err := h.bot.Send(msg)

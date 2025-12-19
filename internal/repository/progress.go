@@ -300,7 +300,7 @@ func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID in
 		WHERE user_id = $1
 		  AND next_review_at IS NOT NULL
 		  AND next_review_at <= NOW()
-		ORDER BY next_review_at ASC
+		ORDER BY next_review_at
 		LIMIT $2
 	`
 
@@ -440,7 +440,7 @@ func (r *ProgressRepository) GetInProgressNames(ctx context.Context, userID int6
         SELECT name_number 
         FROM user_progress 
         WHERE user_id = $1 AND is_learned = false
-        ORDER BY name_number ASC
+        ORDER BY name_number
     `
 
 	rows, err := r.db.Query(ctx, query, userID)

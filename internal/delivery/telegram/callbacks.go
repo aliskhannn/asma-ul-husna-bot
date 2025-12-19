@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
-	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -15,33 +13,29 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 )
 
+// handleCallback routes callback queries to appropriate handlers.
 func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) {
-	data := cb.Data
+	data := decodeCallback(cb.Data)
 
-	switch {
-	case strings.HasPrefix(data, "range:"):
-		h.withCallbackErrorHandling(h.rangeCallbackHandler)(ctx, cb)
-
-	case strings.HasPrefix(data, "name:"):
-		h.withCallbackErrorHandling(h.allCallbackHandler)(ctx, cb)
-
-	case strings.HasPrefix(data, "settings:"):
-		h.withCallbackErrorHandling(h.settingsCallbackHandler)(ctx, cb)
-
-	case strings.HasPrefix(data, "quiz:start"):
-		h.withCallbackErrorHandling(h.handleQuizStartCallback)(ctx, cb)
-
-	case strings.HasPrefix(data, "quiz:") && strings.Count(data, ":") == 3:
-		h.withCallbackErrorHandling(h.handleQuizAnswerCallback)(ctx, cb)
-
+	switch data.Action {
+	case actionName:
+		h.withCallbackErrorHandling(h.handleNameCallback)(ctx, cb)
+	case actionRange:
+		h.withCallbackErrorHandling(h.handleRangeCallback)(ctx, cb)
+	case actionSettings:
+		h.withCallbackErrorHandling(h.handleSettingsCallback)(ctx, cb)
+	case actionQuiz:
+		h.withCallbackErrorHandling(h.handleQuizCallback)(ctx, cb)
+	case actionProgress:
+		h.withCallbackErrorHandling(h.handleProgressCallback)(ctx, cb)
 	default:
-		h.logger.Warn("unknown callback data",
-			zap.String("data", data),
+		h.logger.Warn("unknown callback action",
+			zap.String("action", data.Action),
+			zap.String("raw", data.Raw),
 		)
-		return
 	}
 
-	// Remove the user's "clock".
+	// Remove the user's "loading clock".
 	answer := tgbotapi.NewCallback(cb.ID, "")
 	if _, err := h.bot.Request(answer); err != nil {
 		h.logger.Error("callback answer error",
@@ -51,9 +45,18 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	}
 }
 
-func (h *Handler) allCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
-	pageStr := strings.TrimPrefix(cb.Data, "name:")
-	page, err := strconv.Atoi(pageStr)
+func (h *Handler) handleNameCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
+		return nil
+	}
+
+	data := decodeCallback(cb.Data)
+	if len(data.Params) != 1 {
+		h.logger.Warn("invalid name callback params", zap.String("raw", data.Raw))
+		return nil
+	}
+
+	page, err := strconv.Atoi(data.Params[0])
 	if err != nil || page < 0 {
 		h.logger.Warn("invalid page in callback",
 			zap.String("data", cb.Data),
@@ -66,8 +69,9 @@ func (h *Handler) allCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQ
 	if err != nil {
 		return err
 	}
+
 	if names == nil {
-		msg := newHTMLMessage(cb.Message.Chat.ID, msgNameUnavailable)
+		msg := newPlainMessage(cb.Message.Chat.ID, msgNameUnavailable)
 		return h.send(msg)
 	}
 
@@ -82,11 +86,9 @@ func (h *Handler) allCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQ
 
 	prevData := fmt.Sprintf("name:%d", page-1)
 	nextData := fmt.Sprintf("name:%d", page+1)
-
 	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 
-	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
-	edit.ParseMode = tgbotapi.ModeHTML
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
 	if kb != nil {
 		edit.ReplyMarkup = kb
 	}
@@ -94,24 +96,26 @@ func (h *Handler) allCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQ
 	return h.send(edit)
 }
 
-func (h *Handler) rangeCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
-	parts := strings.Split(cb.Data, ":")
-	if len(parts) != 4 {
-		h.logger.Warn("invalid range callback data",
-			zap.String("data", cb.Data),
-		)
+// handleRangeCallback handles pagination for range-based name view.
+func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
 		return nil
 	}
 
-	page, err1 := strconv.Atoi(parts[1])
-	from, err2 := strconv.Atoi(parts[2])
-	to, err3 := strconv.Atoi(parts[3])
+	data := decodeCallback(cb.Data)
+	if len(data.Params) != 3 {
+		h.logger.Warn("invalid range callback params", zap.String("raw", data.Raw))
+		return nil
+	}
+
+	page, err1 := strconv.Atoi(data.Params[0])
+	from, err2 := strconv.Atoi(data.Params[1])
+	to, err3 := strconv.Atoi(data.Params[2])
+
 	if err1 != nil || err2 != nil || err3 != nil || page < 0 || from < 1 || to > 99 || from > to {
 		h.logger.Warn("invalid range callback values",
 			zap.String("data", cb.Data),
-			zap.Error(err1),
-			zap.Error(err2),
-			zap.Error(err3),
+			zap.Errors("errors", []error{err1, err2, err3}),
 		)
 		return nil
 	}
@@ -120,8 +124,9 @@ func (h *Handler) rangeCallbackHandler(ctx context.Context, cb *tgbotapi.Callbac
 	if err != nil {
 		return err
 	}
+
 	if names == nil {
-		msg := newHTMLMessage(cb.Message.Chat.ID, msgNameUnavailable)
+		msg := newPlainMessage(cb.Message.Chat.ID, msgNameUnavailable)
 		return h.send(msg)
 	}
 
@@ -138,14 +143,11 @@ func (h *Handler) rangeCallbackHandler(ctx context.Context, cb *tgbotapi.Callbac
 	}
 
 	text := pages[page]
-
-	prevData := fmt.Sprintf("range:%d:%d:%d", page-1, from, to)
-	nextData := fmt.Sprintf("range:%d:%d:%d", page+1, from, to)
-
+	prevData := buildRangeCallback(page-1, from, to)
+	nextData := buildRangeCallback(page+1, from, to)
 	kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 
-	edit := tgbotapi.NewEditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, text)
-	edit.ParseMode = tgbotapi.ModeHTML
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
 	if kb != nil {
 		edit.ReplyMarkup = kb
 	}
@@ -153,425 +155,241 @@ func (h *Handler) rangeCallbackHandler(ctx context.Context, cb *tgbotapi.Callbac
 	return h.send(edit)
 }
 
-func (h *Handler) settingsCallbackHandler(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
-	parts := strings.Split(cb.Data, ":")
-	// "settings:<key>" or "settings:<key>:<value>"
-	if len(parts) < 2 {
-		h.logger.Warn("invalid settings callback", zap.String("data", cb.Data))
+// handleSettingsCallback handles all settings-related callbacks.
+func (h *Handler) handleSettingsCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
 		return nil
 	}
 
-	key := parts[1]
-
-	// "settings:<key>"
-	if len(parts) == 2 {
-		switch key {
-		case "menu":
-			return h.showSettingsMenu(ctx, cb)
-		case "names_per_day":
-			return h.showNamesPerDayMenu(cb)
-		case "quiz_length":
-			return h.showQuizLengthMenu(cb)
-		case "quiz_mode":
-			return h.showQuizModesMenu(cb)
-		case "toggle_transliteration":
-			return h.showToggleTransliterationMenu(cb)
-		case "toggle_audio":
-			return h.showToggleAudioMenu(cb)
-		default:
-			h.logger.Warn("unknown settings key", zap.String("key", key), zap.String("data", cb.Data))
-			return nil
-		}
+	data := decodeCallback(cb.Data)
+	if len(data.Params) < 1 {
+		h.logger.Warn("invalid settings callback", zap.String("raw", data.Raw))
+		return nil
 	}
 
-	// "settings:<key>:<value>"
-	value := parts[2]
+	subAction := data.Params[0]
 
-	switch key {
-	case "names_per_day":
-		return h.applyNamesPerDay(ctx, cb, value)
-	case "quiz_length":
-		return h.applyQuizLength(ctx, cb, value)
-	case "quiz_mode":
-		return h.applyQuizMode(ctx, cb, value)
-	case "toggle_transliteration":
-		return h.applyToggleTransliteration(ctx, cb, value)
-	case "toggle_audio":
-		return h.applyToggleAudio(ctx, cb, value)
+	// Menu navigation (no value).
+	if len(data.Params) == 1 {
+		return h.handleSettingsNavigation(ctx, cb, subAction)
+	}
+
+	// Apply setting value.
+	value := data.Params[1]
+	return h.applySettingValue(ctx, cb, subAction, value)
+}
+
+// handleSettingsNavigation shows settings menus.
+func (h *Handler) handleSettingsNavigation(ctx context.Context, cb *tgbotapi.CallbackQuery, subAction string) error {
+	switch subAction {
+	case settingsMenu:
+		return h.showSettingsMenu(ctx, cb)
+	case settingsNamesPerDay:
+		msg := "📚 " + bold("Сколько новых имён изучать в день?") + "\n\n" +
+			md("Выберите интенсивность обучения:")
+		return h.showSettingsSubmenu(cb, msg, buildNamesPerDayKeyboard())
+	case settingsQuizLength:
+		msg := "📝 " + bold("Длина квиза") + "\n\n" +
+			md("Сколько вопросов должно быть в одном квизе?")
+		return h.showSettingsSubmenu(cb, msg, buildQuizLengthKeyboard())
+
+	case settingsQuizMode:
+		msg := "🎲 " + bold("Режим квиза") + "\n\n" +
+			md("Выберите, какие имена включать в квиз: только новые, только на повторение или оба варианта.")
+		return h.showSettingsSubmenu(cb, msg, buildQuizModeKeyboard())
+
+	case settingsToggleTransliteration:
+		msg := "🔤 " + bold("Транслитерация") + "\n\n" +
+			md("Показывать ли транслитерацию арабских имён латиницей?")
+		return h.showSettingsSubmenu(cb, msg, buildToggleTransliterationKeyboard())
+
+	case settingsToggleAudio:
+		msg := "🔊 " + bold("Аудио") + "\n\n" +
+			md("Включить или отключить отправку аудиопроизношения имён.")
+		return h.showSettingsSubmenu(cb, msg, buildToggleAudioKeyboard())
 	default:
-		h.logger.Warn("unknown settings key with value", zap.String("key", key), zap.String("data", cb.Data))
+		h.logger.Warn("unknown settings sub-action", zap.String("sub_action", subAction))
 		return nil
 	}
 }
 
-func (h *Handler) showSettingsMenu(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
-	userID := cb.From.ID
+// applySettingValue applies a new setting value.
+func (h *Handler) applySettingValue(ctx context.Context, cb *tgbotapi.CallbackQuery, subAction, value string) error {
+	switch subAction {
+	case settingsNamesPerDay:
+		return h.applyNamesPerDay(ctx, cb, value)
+	case settingsQuizLength:
+		return h.applyQuizLength(ctx, cb, value)
+	case settingsQuizMode:
+		return h.applyQuizMode(ctx, cb, value)
+	case settingsToggleTransliteration:
+		return h.applyToggleTransliteration(ctx, cb, value)
+	case settingsToggleAudio:
+		return h.applyToggleAudio(ctx, cb, value)
+	default:
+		h.logger.Warn("unknown settings sub-action with value", zap.String("sub_action", subAction))
+		return nil
+	}
+}
 
-	settings, err := h.settingsService.GetOrCreate(ctx, userID)
+// showSettingsMenu displays the main settings menu.
+func (h *Handler) showSettingsMenu(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	text, keyboard, err := h.RenderSettings(ctx, cb.From.ID)
 	if err != nil {
-		msg := newHTMLMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+		msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
 		return h.send(msg)
 	}
 
-	text := fmt.Sprintf(
-		"<b>⚙️ Настройки</b>\n\n"+
-			"📚 <b>Имён в день:</b> %d\n"+
-			"📝 <b>Длина квиза:</b> %d\n"+
-			"🎲 <b>Режим квиза:</b> %s\n"+
-			"🔤 <b>Транслитерация:</b> %s\n"+
-			"🔊 <b>Аудио:</b> %s\n",
-		settings.NamesPerDay,
-		settings.QuizLength,
-		formatQuizMode(settings.QuizMode),
-		formatBool(settings.ShowTransliteration),
-		formatBool(settings.ShowAudio),
-	)
-
-	kb := buildSettingsKeyboard()
-
-	edit := tgbotapi.NewEditMessageText(
-		cb.Message.Chat.ID,
-		cb.Message.MessageID,
-		text,
-	)
-	edit.ParseMode = tgbotapi.ModeHTML
-	edit.ReplyMarkup = &kb
-
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ReplyMarkup = &keyboard
 	return h.send(edit)
 }
 
-func (h *Handler) showNamesPerDayMenu(cb *tgbotapi.CallbackQuery) error {
-	message := "📚 *Сколько новых имён изучать в день?*\n\n" +
-		"Выберите интенсивность обучения:"
-
-	kb := buildNamesPerDayKeyboard()
-
-	edit := tgbotapi.NewEditMessageText(
-		cb.Message.Chat.ID,
-		cb.Message.MessageID,
-		message,
-	)
-	edit.ParseMode = "Markdown"
-	edit.ReplyMarkup = &kb
-
+// showSettingsSubmenu displays a settings submenu.
+func (h *Handler) showSettingsSubmenu(cb *tgbotapi.CallbackQuery, message string, keyboard tgbotapi.InlineKeyboardMarkup) error {
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, message)
+	edit.ReplyMarkup = &keyboard
 	return h.send(edit)
 }
 
-func (h *Handler) showQuizLengthMenu(cb *tgbotapi.CallbackQuery) error {
-	message := "📝 *Длина квиза*\n\n" +
-		"Сколько вопросов должно быть в одном квизе?"
-
-	kb := buildQuizLengthKeyboard()
-
-	edit := tgbotapi.NewEditMessageText(
-		cb.Message.Chat.ID,
-		cb.Message.MessageID,
-		message,
-	)
-	edit.ParseMode = "Markdown"
-	edit.ReplyMarkup = &kb
-
-	return h.send(edit)
-}
-
-func (h *Handler) showQuizModesMenu(cb *tgbotapi.CallbackQuery) error {
-	message := "🎲 *Режим квиза*\n\n" +
-		"Выберите, какие имена включать в квиз: только новые, только на повторение или оба варианта."
-
-	kb := buildQuizModeKeyboard()
-
-	edit := tgbotapi.NewEditMessageText(
-		cb.Message.Chat.ID,
-		cb.Message.MessageID,
-		message,
-	)
-	edit.ParseMode = "Markdown"
-	edit.ReplyMarkup = &kb
-
-	return h.send(edit)
-}
-
-func (h *Handler) showToggleTransliterationMenu(cb *tgbotapi.CallbackQuery) error {
-	message := "🔤 *Транслитерация*\n\n" +
-		"Показывать ли транслитерацию арабских имён латиницей?"
-
-	kb := buildToggleTransliterationKeyboard()
-
-	edit := tgbotapi.NewEditMessageText(
-		cb.Message.Chat.ID,
-		cb.Message.MessageID,
-		message,
-	)
-	edit.ParseMode = "Markdown"
-	edit.ReplyMarkup = &kb
-
-	return h.send(edit)
-}
-
-func (h *Handler) showToggleAudioMenu(cb *tgbotapi.CallbackQuery) error {
-	message := "🔊 *Аудио*\n\n" +
-		"Включить или отключить отправку аудиопроизношения имён."
-
-	kb := buildToggleAudioKeyboard()
-
-	edit := tgbotapi.NewEditMessageText(
-		cb.Message.Chat.ID,
-		cb.Message.MessageID,
-		message,
-	)
-	edit.ParseMode = "Markdown"
-	edit.ReplyMarkup = &kb
-
-	return h.send(edit)
-}
-
+// applyNamesPerDay updates names per day setting.
 func (h *Handler) applyNamesPerDay(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
 	v, err := strconv.Atoi(value)
-	if err != nil {
+	if err != nil || v < 1 || v > 20 {
 		h.logger.Warn("invalid names_per_day value",
-			zap.String("data", cb.Data),
+			zap.String("value", value),
 			zap.Error(err),
-		)
-		return nil
-	}
-
-	if v < 1 || v > 20 {
-		h.logger.Warn("names_per_day value out of range",
-			zap.Int("value", v),
-			zap.String("data", cb.Data),
 		)
 		return nil
 	}
 
 	if err := h.settingsService.UpdateNamesPerDay(ctx, cb.From.ID, v); err != nil {
 		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newHTMLMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
-
 		return err
 	}
 
-	confirm := tgbotapi.NewCallback(cb.ID, fmt.Sprintf("Имён в день: %d", v))
-	if _, err := h.bot.Request(confirm); err != nil {
-		h.logger.Error("failed to send names_per_day confirmation",
-			zap.Error(err),
-			zap.Int("value", v),
-		)
-	}
-
-	return h.showSettingsMenu(ctx, cb)
+	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Имён в день: %d", v))
 }
 
+// applyQuizLength updates quiz length setting.
 func (h *Handler) applyQuizLength(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
 	v, err := strconv.Atoi(value)
-	if err != nil {
+	if err != nil || v < 5 || v > 50 {
 		h.logger.Warn("invalid quiz_length value",
-			zap.String("data", cb.Data),
+			zap.String("value", value),
 			zap.Error(err),
-		)
-		return nil
-	}
-
-	if v < 5 || v > 50 {
-		h.logger.Warn("quiz_length value out of range",
-			zap.Int("value", v),
-			zap.String("data", cb.Data),
 		)
 		return nil
 	}
 
 	if err := h.settingsService.UpdateQuizLength(ctx, cb.From.ID, v); err != nil {
 		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newHTMLMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
-
 		return err
 	}
 
-	confirm := tgbotapi.NewCallback(cb.ID, fmt.Sprintf("Длина квиза: %d", v))
-	if _, err := h.bot.Request(confirm); err != nil {
-		h.logger.Error("failed to send quiz_length confirmation",
-			zap.Error(err),
-			zap.Int("value", v),
-		)
-	}
-
-	return h.showSettingsMenu(ctx, cb)
+	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Длина квиза: %d", v))
 }
 
+// applyQuizMode updates quiz mode setting.
 func (h *Handler) applyQuizMode(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
-	quizMode := value // "new_only", "review_only", "mixed", "daily"
-
-	if err := h.settingsService.UpdateQuizMode(ctx, cb.From.ID, quizMode); err != nil {
+	if err := h.settingsService.UpdateQuizMode(ctx, cb.From.ID, value); err != nil {
 		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newHTMLMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
 		return err
 	}
 
-	confirm := tgbotapi.NewCallback(cb.ID,
-		fmt.Sprintf("Режим квиза: %s", formatQuizMode(quizMode)),
-	)
-	if _, err := h.bot.Request(confirm); err != nil {
-		h.logger.Error("failed to send quiz_mode confirmation",
-			zap.Error(err),
-			zap.String("quiz_mode", quizMode),
-		)
-	}
-
-	return h.showSettingsMenu(ctx, cb)
+	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Режим квиза: %s", formatQuizMode(value)))
 }
 
+// applyToggleTransliteration toggles transliteration setting.
 func (h *Handler) applyToggleTransliteration(ctx context.Context, cb *tgbotapi.CallbackQuery, _ string) error {
 	if err := h.settingsService.ToggleTransliteration(ctx, cb.From.ID); err != nil {
 		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newHTMLMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
 		return err
 	}
 
-	confirm := tgbotapi.NewCallback(cb.ID, "Настройка транслитерации обновлена")
-	if _, err := h.bot.Request(confirm); err != nil {
-		h.logger.Error("failed to send transliteration toggle confirmation",
-			zap.Error(err),
-		)
-	}
-
-	return h.showSettingsMenu(ctx, cb)
+	return h.confirmSettingAndShowMenu(ctx, cb, "Настройка транслитерации обновлена")
 }
 
+// applyToggleAudio toggles audio setting.
 func (h *Handler) applyToggleAudio(ctx context.Context, cb *tgbotapi.CallbackQuery, _ string) error {
 	if err := h.settingsService.ToggleAudio(ctx, cb.From.ID); err != nil {
 		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newHTMLMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
 			return h.send(msg)
 		}
 		return err
 	}
 
-	confirm := tgbotapi.NewCallback(cb.ID, "Настройка аудио обновлена")
-	if _, err := h.bot.Request(confirm); err != nil {
-		h.logger.Error("failed to send audio toggle confirmation",
-			zap.Error(err),
-		)
-	}
+	return h.confirmSettingAndShowMenu(ctx, cb, "Настройка аудио обновлена")
+}
 
+// confirmSettingAndShowMenu shows confirmation and returns to settings menu.
+func (h *Handler) confirmSettingAndShowMenu(ctx context.Context, cb *tgbotapi.CallbackQuery, confirmText string) error {
+	confirm := tgbotapi.NewCallback(cb.ID, confirmText)
+	if _, err := h.bot.Request(confirm); err != nil {
+		h.logger.Error("failed to send confirmation", zap.Error(err))
+	}
 	return h.showSettingsMenu(ctx, cb)
 }
 
-func (h *Handler) handleQuizAnswerCallback(ctx context.Context, callback *tgbotapi.CallbackQuery) error {
-	// quiz:{sessionID}:{questionNum}:{answerIndex}
-	parts := strings.Split(callback.Data, ":")
-	if len(parts) < 4 {
-		return fmt.Errorf("invalid quiz answer callback data")
+// handleQuizCallback handles quiz-related callbacks.
+func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	data := decodeCallback(cb.Data)
+
+	if len(data.Params) < 1 {
+		return fmt.Errorf("invalid quiz callback: no params")
 	}
 
-	sessionID, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid session ID: %w", err)
+	// Check if it's quiz start.
+	if data.Params[0] == quizStart {
+		return h.handleQuizStart(ctx, cb)
 	}
 
-	questionNum, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return fmt.Errorf("invalid question number: %w", err)
+	// Otherwise, it's a quiz answer: quiz:{sessionID}:{questionNum}:{answerIndex}
+	if len(data.Params) != 3 {
+		return fmt.Errorf("invalid quiz answer callback: expected 3 params, got %d", len(data.Params))
 	}
 
-	answerIndex, err := strconv.Atoi(parts[3])
-	if err != nil {
-		return fmt.Errorf("invalid answer index: %w", err)
-	}
-
-	userID := callback.From.ID
-	chatID := callback.Message.Chat.ID
-
-	session, err := h.quizService.GetSession(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-
-	if questionNum != session.CurrentQuestionNum {
-		return h.answerCallback(callback.ID, "Вопрос уже был отвечен")
-	}
-
-	questions := h.getQuizQuestions(sessionID)
-	if questions == nil || questionNum > len(questions) {
-		return h.answerCallback(callback.ID, "Вопрос не найден")
-	}
-
-	question := &questions[questionNum-1]
-
-	isCorrect := answerIndex == question.CorrectIndex
-
-	// TODO: В будущем можно добавить inline-кнопки "Легко/Сложно" после правильного ответа
-	quality := entities.QualityGood
-	if !isCorrect {
-		quality = entities.QualityFail
-	}
-
-	if err := h.progressService.RecordReviewSRS(ctx, userID, question.NameNumber, quality); err != nil {
-		h.logger.Error("failed to record SRS review")
-		// Продолжаем выполнение, не критичная ошибка
-	}
-
-	answer, err := h.quizService.CheckAndSaveAnswer(ctx, userID, session, question, answerIndex)
-	if err != nil {
-		log.Printf("Failed to check answer: %v", err)
-		return h.answerCallback(callback.ID, "Ошибка при проверке ответа")
-	}
-
-	feedbackText := formatAnswerFeedback(answer.IsCorrect, question.CorrectAnswer)
-
-	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
-	_, _ = h.bot.Send(deleteMsg)
-
-	feedbackMsg := newHTMLMessage(chatID, feedbackText)
-	_, err = h.bot.Send(feedbackMsg)
-	if err != nil {
-		log.Printf("Failed to send feedback: %v", err)
-	}
-
-	if session.SessionStatus == "completed" {
-		return h.sendQuizResults(chatID, session)
-	}
-
-	if session.CurrentQuestionNum <= len(questions) {
-		nextQuestion := &questions[session.CurrentQuestionNum-1]
-		err = h.sendQuizQuestion(chatID, session, nextQuestion, session.CurrentQuestionNum)
-		if err != nil {
-			log.Printf("Failed to send next question: %v", err)
-		}
-	}
-
-	return h.answerCallback(callback.ID, "")
+	return h.handleQuizAnswer(ctx, cb, data)
 }
 
-func (h *Handler) handleQuizStartCallback(ctx context.Context, callback *tgbotapi.CallbackQuery) error {
-	chatID := callback.Message.Chat.ID
-	userID := callback.From.ID
+// handleQuizStart starts a new quiz session.
+func (h *Handler) handleQuizStart(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	chatID := cb.Message.Chat.ID
+	userID := cb.From.ID
 
-	deleteMsg := tgbotapi.NewDeleteMessage(chatID, callback.Message.MessageID)
+	// Delete previous message.
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
 	_, _ = h.bot.Send(deleteMsg)
 
 	settings, err := h.settingsService.GetOrCreate(ctx, userID)
 	if err != nil {
-		msg := newHTMLMessage(chatID, msgSettingsUnavailable)
+		msg := newPlainMessage(chatID, msgSettingsUnavailable)
 		return h.send(msg)
 	}
-	mode := settings.QuizMode
 
+	mode := settings.QuizMode
 	session, questions, err := h.quizService.GenerateQuiz(ctx, userID, mode)
 	if err != nil || len(questions) == 0 {
-		msg := newHTMLMessage(chatID, msgQuizUnavailable)
+		msg := newPlainMessage(chatID, msgQuizUnavailable)
 		return h.send(msg)
 	}
 
 	h.storeQuizQuestions(session.ID, questions)
 
-	startMsg := newHTMLMessage(chatID, buildQuizStartMessage(mode))
+	startMsg := newMessage(chatID, buildQuizStartMessage(mode))
 	if err := h.send(startMsg); err != nil {
 		return err
 	}
@@ -580,9 +398,114 @@ func (h *Handler) handleQuizStartCallback(ctx context.Context, callback *tgbotap
 		return err
 	}
 
-	return h.answerCallback(callback.ID, "")
+	return h.answerCallback(cb.ID, "")
 }
 
+// handleQuizAnswer processes a quiz answer.
+func (h *Handler) handleQuizAnswer(ctx context.Context, cb *tgbotapi.CallbackQuery, data callbackData) error {
+	sessionID, err := strconv.ParseInt(data.Params[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid session ID: %w", err)
+	}
+
+	questionNum, err := strconv.Atoi(data.Params[1])
+	if err != nil {
+		return fmt.Errorf("invalid question number: %w", err)
+	}
+
+	answerIndex, err := strconv.Atoi(data.Params[2])
+	if err != nil {
+		return fmt.Errorf("invalid answer index: %w", err)
+	}
+
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+
+	session, err := h.quizService.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if questionNum != session.CurrentQuestionNum {
+		return h.answerCallback(cb.ID, "Вопрос уже был отвечен")
+	}
+
+	questions := h.getQuizQuestions(sessionID)
+	if questions == nil || questionNum > len(questions) {
+		return h.answerCallback(cb.ID, "Вопрос не найден")
+	}
+
+	question := &questions[questionNum-1]
+	isCorrect := answerIndex == question.CorrectIndex
+
+	// Record SRS review.
+	quality := entities.QualityGood
+	if !isCorrect {
+		quality = entities.QualityFail
+	}
+
+	if err := h.progressService.RecordReviewSRS(ctx, userID, question.NameNumber, quality); err != nil {
+		h.logger.Error("failed to record SRS review", zap.Error(err))
+		// Continue execution, not a critical error.
+	}
+
+	// Save answer.
+	answer, err := h.quizService.CheckAndSaveAnswer(ctx, userID, session, question, answerIndex)
+	if err != nil {
+		h.logger.Error("failed to check answer", zap.Error(err))
+		return h.answerCallback(cb.ID, "Ошибка при проверке ответа")
+	}
+
+	// Delete question message.
+	deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
+	_, _ = h.bot.Send(deleteMsg)
+
+	// Send feedback.
+	feedbackText := formatAnswerFeedback(answer.IsCorrect, question.CorrectAnswer)
+	feedbackMsg := newMessage(chatID, feedbackText)
+	_, err = h.bot.Send(feedbackMsg)
+	if err != nil {
+		h.logger.Error("failed to send feedback", zap.Error(err))
+	}
+
+	// Check if quiz is completed.
+	if session.SessionStatus == "completed" {
+		return h.sendQuizResults(chatID, session)
+	}
+
+	// Send next question.
+	if session.CurrentQuestionNum <= len(questions) {
+		nextQuestion := &questions[session.CurrentQuestionNum-1]
+		err = h.sendQuizQuestion(chatID, session, nextQuestion, session.CurrentQuestionNum)
+		if err != nil {
+			h.logger.Error("failed to send next question", zap.Error(err))
+		}
+	}
+
+	return h.answerCallback(cb.ID, "")
+}
+
+// handleProgressCallback shows user progress.
+func (h *Handler) handleProgressCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
+		return nil
+	}
+
+	text, keyboard, err := h.RenderProgress(ctx, cb.From.ID, true)
+	if err != nil {
+		msg := newPlainMessage(cb.Message.Chat.ID, msgProgressUnavailable)
+		return h.send(msg)
+	}
+
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	if keyboard != nil {
+		edit.ReplyMarkup = keyboard
+	}
+
+	return h.send(edit)
+}
+
+// answerCallback sends a callback answer (removes loading indicator).
 func (h *Handler) answerCallback(callbackID, text string) error {
 	callback := tgbotapi.NewCallback(callbackID, text)
 	_, err := h.bot.Request(callback)

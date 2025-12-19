@@ -16,7 +16,7 @@ func (h *Handler) withErrorHandling(fn HandlerFunc) HandlerFunc {
 				zap.Int64("chat_id", chatID),
 				zap.Error(err),
 			)
-			msg := newHTMLMessage(chatID, msgInternalError)
+			msg := newPlainMessage(chatID, msgInternalError)
 			return h.send(msg)
 		}
 		return nil
@@ -34,7 +34,7 @@ func (h *Handler) withCallbackErrorHandling(fn CallbackHandlerFunc) func(ctx con
 				zap.Int64("user_id", cb.From.ID),
 			)
 			if cb.Message != nil {
-				_ = h.send(newHTMLMessage(cb.Message.Chat.ID, msgInternalError))
+				_ = h.send(newPlainMessage(cb.Message.Chat.ID, msgInternalError))
 			}
 		}
 	}
