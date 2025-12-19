@@ -50,14 +50,7 @@ func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("📚 Имён в день", buildSettingsCallback(settingsNamesPerDay)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📝 Длина квиза", buildSettingsCallback(settingsQuizLength)),
-		),
-		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🎲 Режим квиза", buildSettingsCallback(settingsQuizMode)),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔤 Транслитерация", buildSettingsCallback(settingsToggleTransliteration)),
-			tgbotapi.NewInlineKeyboardButtonData("🔊 Аудио", buildSettingsCallback(settingsToggleAudio)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📊 Мой прогресс", buildProgressCallback()),
@@ -106,70 +99,11 @@ func buildNamesPerDayKeyboard() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-// buildQuizLengthKeyboard builds keyboard for quiz length setting.
-func buildQuizLengthKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("5 вопросов", buildSettingsCallback(settingsQuizLength, "5")),
-			tgbotapi.NewInlineKeyboardButtonData("10 вопросов", buildSettingsCallback(settingsQuizLength, "10")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("15 вопросов", buildSettingsCallback(settingsQuizLength, "15")),
-			tgbotapi.NewInlineKeyboardButtonData("20 вопросов", buildSettingsCallback(settingsQuizLength, "20")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("25 вопросов", buildSettingsCallback(settingsQuizLength, "25")),
-			tgbotapi.NewInlineKeyboardButtonData("30 вопросов", buildSettingsCallback(settingsQuizLength, "30")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("35 вопросов", buildSettingsCallback(settingsQuizLength, "35")),
-			tgbotapi.NewInlineKeyboardButtonData("40 вопросов", buildSettingsCallback(settingsQuizLength, "40")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("45 вопросов", buildSettingsCallback(settingsQuizLength, "45")),
-			tgbotapi.NewInlineKeyboardButtonData("50 вопросов", buildSettingsCallback(settingsQuizLength, "50")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
-		),
-	)
-}
-
-// buildToggleTransliterationKeyboard builds keyboard for transliteration toggle.
-func buildToggleTransliterationKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✅ Показывать транслитерацию", buildSettingsCallback(settingsToggleTransliteration, "on")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚫 Не показывать", buildSettingsCallback(settingsToggleTransliteration, "off")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
-		),
-	)
-}
-
-// buildToggleAudioKeyboard builds keyboard for audio toggle.
-func buildToggleAudioKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔊 Включить аудио", buildSettingsCallback(settingsToggleAudio, "on")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔇 Отключить аудио", buildSettingsCallback(settingsToggleAudio, "off")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
-		),
-	)
-}
-
 // buildQuizModeKeyboard builds keyboard for quiz mode setting.
 func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🆕 Только новые", buildSettingsCallback(settingsQuizMode, "new_only")),
+			tgbotapi.NewInlineKeyboardButtonData("🆕 Только новые", buildSettingsCallback(settingsQuizMode, "new")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔄 Только повторение", buildSettingsCallback(settingsQuizMode, "review")),

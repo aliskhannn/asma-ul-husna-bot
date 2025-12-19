@@ -35,6 +35,8 @@ type QuizRepo interface {
 
 var questionTypes = []string{"translation", "transliteration", "meaning", "arabic"}
 
+var ErrNoQuestionsAvailable = errors.New("no questions available")
+
 type SettingsRepo interface {
 	GetByUserID(ctx context.Context, userID int64) (*entities.UserSettings, error)
 }
@@ -72,26 +74,23 @@ func (s *QuizService) GenerateQuiz(
 		settings = entities.NewUserSettings(userID)
 	}
 
+	reviewLimit := settings.MaxReviewsPerDay
+	if reviewLimit == 0 {
+		reviewLimit = 50
+	}
+
 	var nameNumbers []int
 
 	switch mode {
 	case "daily", "mixed":
 		// 1. First, we take repetitions (priority!).
-		dueLimit := settings.MaxReviewsPerDay
-		if dueLimit == 0 {
-			dueLimit = 50 // дефолт
-		}
-
-		reviewNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
+		reviewNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, reviewLimit)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		// 2. Add new names to the quiz length.
 		newLimit := settings.NamesPerDay
-		if len(reviewNames)+newLimit > settings.QuizLength {
-			newLimit = settings.QuizLength - len(reviewNames)
-		}
 		if newLimit < 0 {
 			newLimit = 0
 		}
@@ -105,15 +104,15 @@ func (s *QuizService) GenerateQuiz(
 
 	case "review":
 		// Only repetitions.
-		reviewNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, settings.QuizLength)
+		reviewNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, reviewLimit)
 		if err != nil {
 			return nil, nil, err
 		}
 		nameNumbers = reviewNames
 
-	case "new_only":
+	case "new":
 		// New only.
-		newNames, err := s.progressRepo.GetNewNames(ctx, userID, settings.QuizLength)
+		newNames, err := s.progressRepo.GetNewNames(ctx, userID, settings.NamesPerDay)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -124,7 +123,7 @@ func (s *QuizService) GenerateQuiz(
 	}
 
 	if len(nameNumbers) == 0 {
-		return nil, nil, fmt.Errorf("no names available for quiz")
+		return nil, nil, ErrNoQuestionsAvailable
 	}
 
 	session := entities.NewQuizSession(userID, len(nameNumbers), mode)
@@ -132,11 +131,14 @@ func (s *QuizService) GenerateQuiz(
 	if err != nil {
 		return nil, nil, err
 	}
-
 	session.ID = id
+
 	questions, err := s.generateQuestions(ctx, nameNumbers, settings)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(questions) == 0 {
+		return nil, nil, ErrNoQuestionsAvailable
 	}
 
 	return session, questions, nil

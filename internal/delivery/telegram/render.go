@@ -20,7 +20,7 @@ func (h *Handler) RenderProgress(ctx context.Context, userID int64, withKeyboard
 	}
 
 	progressBar := buildProgressBar(summary.Learned, 99, 20)
-	
+
 	text := fmt.Sprintf(
 		"%s\n\n%s\n\n%s\n%s\n%s\n\n%s\n%s\n%s\n",
 		md("📊 Ваш прогресс"),
@@ -50,13 +50,10 @@ func (h *Handler) RenderSettings(ctx context.Context, userID int64) (string, tgb
 	}
 
 	text := fmt.Sprintf(
-		"%s\n\n%s\n%s\n%s\n%s\n%s\n",
+		"%s\n\n%s\n%s\n",
 		md("⚙️ Настройки"),
 		md(fmt.Sprintf("📚 Имён в день: %d", settings.NamesPerDay)),
-		md(fmt.Sprintf("📝 Длина квиза: %d", settings.QuizLength)),
 		md(fmt.Sprintf("🎲 Режим квиза: %s", formatQuizMode(settings.QuizMode))),
-		md(fmt.Sprintf("🔤 Транслитерация: %s", formatBool(settings.ShowTransliteration))),
-		md(fmt.Sprintf("🔊 Аудио: %s", formatBool(settings.ShowAudio))),
 	)
 
 	kb := buildSettingsKeyboard()

@@ -16,21 +16,16 @@ const (
 
 // Settings sub-actions.
 const (
-	settingsMenu                  = "menu"
-	settingsNamesPerDay           = "names_per_day"
-	settingsQuizLength            = "quiz_length"
-	settingsQuizMode              = "quiz_mode"
-	settingsToggleTransliteration = "toggle_transliteration"
-	settingsToggleAudio           = "toggle_audio"
+	settingsMenu        = "menu"
+	settingsNamesPerDay = "names_per_day"
+	settingsQuizMode    = "quiz_mode"
 )
 
 // Quiz sub-actions.
 const (
-	quizStart  = "start"
-	quizAnswer = "answer"
+	quizStart = "start"
 )
 
-// callbackData represents structured callback data.
 // callbackData represents structured callback data.
 type callbackData struct {
 	Action string

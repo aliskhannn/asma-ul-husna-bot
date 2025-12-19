@@ -30,10 +30,7 @@ type ProgressService interface {
 type SettingsService interface {
 	GetOrCreate(ctx context.Context, userID int64) (*entities.UserSettings, error)
 	UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error
-	UpdateQuizLength(ctx context.Context, userID int64, quizLength int) error
 	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
-	ToggleTransliteration(ctx context.Context, userID int64) error
-	ToggleAudio(ctx context.Context, userID int64) error
 }
 
 type QuizService interface {
@@ -150,24 +147,24 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			}
 
 		case "random":
-			_ = h.withErrorHandling(h.randomHandler(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleRandom(from.ID))(ctx, chatID)
 
 		case "all":
 			_ = h.withErrorHandling(func(ctx context.Context, chatID int64) error {
-				return h.allCommandHandler(ctx, chatID)
+				return h.handleAll(ctx, chatID)
 			})(ctx, chatID)
 
 		case "range":
-			_ = h.withErrorHandling(h.rangeCommandHandler(update.Message.CommandArguments()))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleRange(update.Message.CommandArguments()))(ctx, chatID)
 
 		case "progress":
-			_ = h.withErrorHandling(h.progressHandler(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleProgress(from.ID))(ctx, chatID)
 
 		case "quiz":
-			_ = h.withErrorHandling(h.quizHandler(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleQuiz(from.ID))(ctx, chatID)
 
 		case "settings":
-			_ = h.withErrorHandling(h.settingsHandler(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleSettings(from.ID))(ctx, chatID)
 
 		default:
 			msg.Text = msgUnknownCommand
@@ -181,7 +178,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	_ = h.withErrorHandling(h.numberHandler(update.Message.Text, from.ID))(ctx, chatID)
+	_ = h.withErrorHandling(h.handleNumber(update.Message.Text, from.ID))(ctx, chatID)
 }
 
 func (h *Handler) send(c tgbotapi.Chattable) error {

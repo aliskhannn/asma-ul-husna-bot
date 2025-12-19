@@ -188,25 +188,12 @@ func (h *Handler) handleSettingsNavigation(ctx context.Context, cb *tgbotapi.Cal
 		msg := "📚 " + bold("Сколько новых имён изучать в день?") + "\n\n" +
 			md("Выберите интенсивность обучения:")
 		return h.showSettingsSubmenu(cb, msg, buildNamesPerDayKeyboard())
-	case settingsQuizLength:
-		msg := "📝 " + bold("Длина квиза") + "\n\n" +
-			md("Сколько вопросов должно быть в одном квизе?")
-		return h.showSettingsSubmenu(cb, msg, buildQuizLengthKeyboard())
 
 	case settingsQuizMode:
 		msg := "🎲 " + bold("Режим квиза") + "\n\n" +
 			md("Выберите, какие имена включать в квиз: только новые, только на повторение или оба варианта.")
 		return h.showSettingsSubmenu(cb, msg, buildQuizModeKeyboard())
 
-	case settingsToggleTransliteration:
-		msg := "🔤 " + bold("Транслитерация") + "\n\n" +
-			md("Показывать ли транслитерацию арабских имён латиницей?")
-		return h.showSettingsSubmenu(cb, msg, buildToggleTransliterationKeyboard())
-
-	case settingsToggleAudio:
-		msg := "🔊 " + bold("Аудио") + "\n\n" +
-			md("Включить или отключить отправку аудиопроизношения имён.")
-		return h.showSettingsSubmenu(cb, msg, buildToggleAudioKeyboard())
 	default:
 		h.logger.Warn("unknown settings sub-action", zap.String("sub_action", subAction))
 		return nil
@@ -218,14 +205,8 @@ func (h *Handler) applySettingValue(ctx context.Context, cb *tgbotapi.CallbackQu
 	switch subAction {
 	case settingsNamesPerDay:
 		return h.applyNamesPerDay(ctx, cb, value)
-	case settingsQuizLength:
-		return h.applyQuizLength(ctx, cb, value)
 	case settingsQuizMode:
 		return h.applyQuizMode(ctx, cb, value)
-	case settingsToggleTransliteration:
-		return h.applyToggleTransliteration(ctx, cb, value)
-	case settingsToggleAudio:
-		return h.applyToggleAudio(ctx, cb, value)
 	default:
 		h.logger.Warn("unknown settings sub-action with value", zap.String("sub_action", subAction))
 		return nil
@@ -274,28 +255,6 @@ func (h *Handler) applyNamesPerDay(ctx context.Context, cb *tgbotapi.CallbackQue
 	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Имён в день: %d", v))
 }
 
-// applyQuizLength updates quiz length setting.
-func (h *Handler) applyQuizLength(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
-	v, err := strconv.Atoi(value)
-	if err != nil || v < 5 || v > 50 {
-		h.logger.Warn("invalid quiz_length value",
-			zap.String("value", value),
-			zap.Error(err),
-		)
-		return nil
-	}
-
-	if err := h.settingsService.UpdateQuizLength(ctx, cb.From.ID, v); err != nil {
-		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
-			return h.send(msg)
-		}
-		return err
-	}
-
-	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Длина квиза: %d", v))
-}
-
 // applyQuizMode updates quiz mode setting.
 func (h *Handler) applyQuizMode(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
 	if err := h.settingsService.UpdateQuizMode(ctx, cb.From.ID, value); err != nil {
@@ -307,32 +266,6 @@ func (h *Handler) applyQuizMode(ctx context.Context, cb *tgbotapi.CallbackQuery,
 	}
 
 	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Режим квиза: %s", formatQuizMode(value)))
-}
-
-// applyToggleTransliteration toggles transliteration setting.
-func (h *Handler) applyToggleTransliteration(ctx context.Context, cb *tgbotapi.CallbackQuery, _ string) error {
-	if err := h.settingsService.ToggleTransliteration(ctx, cb.From.ID); err != nil {
-		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
-			return h.send(msg)
-		}
-		return err
-	}
-
-	return h.confirmSettingAndShowMenu(ctx, cb, "Настройка транслитерации обновлена")
-}
-
-// applyToggleAudio toggles audio setting.
-func (h *Handler) applyToggleAudio(ctx context.Context, cb *tgbotapi.CallbackQuery, _ string) error {
-	if err := h.settingsService.ToggleAudio(ctx, cb.From.ID); err != nil {
-		if errors.Is(err, repository.ErrSettingsNotFound) {
-			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
-			return h.send(msg)
-		}
-		return err
-	}
-
-	return h.confirmSettingAndShowMenu(ctx, cb, "Настройка аудио обновлена")
 }
 
 // confirmSettingAndShowMenu shows confirmation and returns to settings menu.

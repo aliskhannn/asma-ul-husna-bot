@@ -2,14 +2,16 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
-// numberHandler handles numeric input (name by number).
-func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
+// handleNumber handles numeric input (name by number).
+func (h *Handler) handleNumber(numStr string, userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		n, err := strconv.Atoi(numStr)
 		if err != nil {
@@ -45,8 +47,8 @@ func (h *Handler) numberHandler(numStr string, userID int64) HandlerFunc {
 	}
 }
 
-// randomHandler handles /random command.
-func (h *Handler) randomHandler(userID int64) HandlerFunc {
+// handleRandom handles /random command.
+func (h *Handler) handleRandom(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		name, err := h.nameService.GetRandom(ctx)
 		if err != nil {
@@ -73,8 +75,8 @@ func (h *Handler) randomHandler(userID int64) HandlerFunc {
 	}
 }
 
-// allCommandHandler handles /all command.
-func (h *Handler) allCommandHandler(ctx context.Context, chatID int64) error {
+// handleAll handles /all command.
+func (h *Handler) handleAll(ctx context.Context, chatID int64) error {
 	names, err := h.getAllNames(ctx)
 	if err != nil {
 		return err
@@ -99,8 +101,8 @@ func (h *Handler) allCommandHandler(ctx context.Context, chatID int64) error {
 	return h.send(msg)
 }
 
-// rangeCommandHandler handles /range command.
-func (h *Handler) rangeCommandHandler(argsStr string) HandlerFunc {
+// handleRange handles /range command.
+func (h *Handler) handleRange(argsStr string) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		args := strings.Fields(argsStr)
 		if len(args) != 2 {
@@ -142,8 +144,8 @@ func (h *Handler) rangeCommandHandler(argsStr string) HandlerFunc {
 	}
 }
 
-// progressHandler handles /progress command.
-func (h *Handler) progressHandler(userID int64) HandlerFunc {
+// handleProgress handles /progress command.
+func (h *Handler) handleProgress(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		text, keyboard, err := h.RenderProgress(ctx, userID, true)
 		if err != nil {
@@ -160,8 +162,8 @@ func (h *Handler) progressHandler(userID int64) HandlerFunc {
 	}
 }
 
-// settingsHandler handles /settings command.
-func (h *Handler) settingsHandler(userID int64) HandlerFunc {
+// handleSettings handles /settings command.
+func (h *Handler) handleSettings(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		text, keyboard, err := h.RenderSettings(ctx, userID)
 		if err != nil {
@@ -176,7 +178,7 @@ func (h *Handler) settingsHandler(userID int64) HandlerFunc {
 }
 
 // quizHandler handles /quiz command.
-func (h *Handler) quizHandler(userID int64) HandlerFunc {
+func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
@@ -186,9 +188,19 @@ func (h *Handler) quizHandler(userID int64) HandlerFunc {
 
 		mode := settings.QuizMode
 		session, questions, err := h.quizService.GenerateQuiz(ctx, userID, mode)
-		if err != nil || len(questions) == 0 {
-			msg := newPlainMessage(chatID, msgQuizUnavailable)
-			return h.send(msg)
+		if err != nil {
+			if errors.Is(err, service.ErrNoQuestionsAvailable) {
+				switch mode {
+				case "review":
+					return h.send(newPlainMessage(chatID, msgNoReviews))
+				case "new":
+					return h.send(newPlainMessage(chatID, msgNoNewNames))
+				default:
+					return h.send(newPlainMessage(chatID, msgNoAvailableQuestions))
+				}
+			}
+
+			return h.send(newPlainMessage(chatID, msgQuizUnavailable))
 		}
 
 		h.storeQuizQuestions(session.ID, questions)

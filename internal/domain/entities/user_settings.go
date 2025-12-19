@@ -6,30 +6,24 @@ import (
 )
 
 type UserSettings struct {
-	UserID              int64
-	NamesPerDay         int
-	QuizLength          int
-	QuizMode            string
-	ShowTransliteration bool
-	ShowAudio           bool
-	MaxReviewsPerDay    int
-	LanguageCode        *string // nullable, "ru", "en"
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	UserID           int64
+	NamesPerDay      int
+	QuizMode         string
+	MaxReviewsPerDay int
+	LanguageCode     *string // nullable, "ru", "en"
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func NewUserSettings(userID int64) *UserSettings {
 	now := time.Now()
 	return &UserSettings{
-		UserID:              userID,
-		NamesPerDay:         1,
-		QuizLength:          10,
-		QuizMode:            "mixed",
-		ShowTransliteration: true,
-		ShowAudio:           true,
-		MaxReviewsPerDay:    50,
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		UserID:           userID,
+		NamesPerDay:      1,
+		QuizMode:         "mixed",
+		MaxReviewsPerDay: 50,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 
@@ -50,10 +44,7 @@ func (us *UserSettings) Validate() error {
 	if us.NamesPerDay < 1 || us.NamesPerDay > 20 {
 		return fmt.Errorf("names_per_day must be between 1 and 20")
 	}
-	if us.QuizLength < 5 || us.QuizLength > 50 {
-		return fmt.Errorf("quiz_length must be between 5 and 50")
-	}
-	validModes := []string{"new_only", "review_only", "mixed"}
+	validModes := []string{"new", "review", "mixed", "daily"}
 	for _, mode := range validModes {
 		if us.QuizMode == mode {
 			return nil

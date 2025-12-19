@@ -24,9 +24,8 @@ func NewSettingsRepository(db *pgxpool.Pool) *SettingsRepository {
 // Create creates default settings for a new user.
 func (r *SettingsRepository) Create(ctx context.Context, userID int64) error {
 	query := `
-        INSERT INTO user_settings (user_id, names_per_day, quiz_length, quiz_mode, 
-                                    show_transliteration, show_audio, language_code, created_at, updated_at)
-        VALUES ($1, 1, 10, 'mixed', true, true, 'ru', NOW(), NOW())
+        INSERT INTO user_settings (user_id, names_per_day, quiz_mode, language_code, created_at, updated_at)
+        VALUES ($1, 1, 'mixed', 'ru', NOW(), NOW())
         ON CONFLICT (user_id) DO NOTHING
     `
 
@@ -42,8 +41,7 @@ func (r *SettingsRepository) Create(ctx context.Context, userID int64) error {
 // Returns ErrSettingsNotFound if settings don't exist.
 func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*entities.UserSettings, error) {
 	query := `
-        SELECT user_id, names_per_day, quiz_length, quiz_mode, 
-               show_transliteration, show_audio, language_code, created_at, updated_at
+        SELECT user_id, names_per_day, quiz_mode, language_code, created_at, updated_at
         FROM user_settings
         WHERE user_id = $1
     `
@@ -52,10 +50,7 @@ func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*en
 	err := r.db.QueryRow(ctx, query, userID).Scan(
 		&settings.UserID,
 		&settings.NamesPerDay,
-		&settings.QuizLength,
 		&settings.QuizMode,
-		&settings.ShowTransliteration,
-		&settings.ShowAudio,
 		&settings.LanguageCode,
 		&settings.CreatedAt,
 		&settings.UpdatedAt,
@@ -75,11 +70,8 @@ func (r *SettingsRepository) Update(ctx context.Context, settings *entities.User
 	query := `
         UPDATE user_settings
         SET names_per_day = $2,
-            quiz_length = $3,
-            quiz_mode = $4,
-            show_transliteration = $5,
-            show_audio = $6,
-            language_code = $7,
+            quiz_mode = $3,
+            language_code = $4,
             updated_at = NOW()
         WHERE user_id = $1
     `
@@ -87,10 +79,7 @@ func (r *SettingsRepository) Update(ctx context.Context, settings *entities.User
 	cmdTag, err := r.db.Exec(ctx, query,
 		settings.UserID,
 		settings.NamesPerDay,
-		settings.QuizLength,
 		settings.QuizMode,
-		settings.ShowTransliteration,
-		settings.ShowAudio,
 		settings.LanguageCode,
 	)
 	if err != nil {
@@ -124,26 +113,6 @@ func (r *SettingsRepository) UpdateNamesPerDay(ctx context.Context, userID int64
 	return nil
 }
 
-// UpdateQuizLength updates only the quiz_length field.
-func (r *SettingsRepository) UpdateQuizLength(ctx context.Context, userID int64, quizLength int) error {
-	query := `
-        UPDATE user_settings
-        SET quiz_length = $2, updated_at = NOW()
-        WHERE user_id = $1
-    `
-
-	cmdTag, err := r.db.Exec(ctx, query, userID, quizLength)
-	if err != nil {
-		return fmt.Errorf("update quiz length: %w", err)
-	}
-
-	if cmdTag.RowsAffected() == 0 {
-		return ErrSettingsNotFound
-	}
-
-	return nil
-}
-
 // UpdateQuizMode updates only the quiz_mode field.
 func (r *SettingsRepository) UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error {
 	query := `
@@ -155,46 +124,6 @@ func (r *SettingsRepository) UpdateQuizMode(ctx context.Context, userID int64, q
 	cmdTag, err := r.db.Exec(ctx, query, userID, quizMode)
 	if err != nil {
 		return fmt.Errorf("update quiz mode: %w", err)
-	}
-
-	if cmdTag.RowsAffected() == 0 {
-		return ErrSettingsNotFound
-	}
-
-	return nil
-}
-
-// ToggleTransliteration toggles the show_transliteration field.
-func (r *SettingsRepository) ToggleTransliteration(ctx context.Context, userID int64) error {
-	query := `
-        UPDATE user_settings
-        SET show_transliteration = NOT show_transliteration, updated_at = NOW()
-        WHERE user_id = $1
-    `
-
-	cmdTag, err := r.db.Exec(ctx, query, userID)
-	if err != nil {
-		return fmt.Errorf("toggle transliteration: %w", err)
-	}
-
-	if cmdTag.RowsAffected() == 0 {
-		return ErrSettingsNotFound
-	}
-
-	return nil
-}
-
-// ToggleAudio toggles the show_audio field.
-func (r *SettingsRepository) ToggleAudio(ctx context.Context, userID int64) error {
-	query := `
-        UPDATE user_settings
-        SET show_audio = NOT show_audio, updated_at = NOW()
-        WHERE user_id = $1
-    `
-
-	cmdTag, err := r.db.Exec(ctx, query, userID)
-	if err != nil {
-		return fmt.Errorf("toggle audio: %w", err)
 	}
 
 	if cmdTag.RowsAffected() == 0 {
