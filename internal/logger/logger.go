@@ -7,7 +7,7 @@ import (
 )
 
 func New(cfg *config.Config) (*zap.Logger, error) {
-	if cfg.ENV == "production" {
+	if cfg.Env == "production" {
 		return zap.NewProduction()
 	}
 

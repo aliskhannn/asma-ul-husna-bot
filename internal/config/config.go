@@ -3,7 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -12,31 +12,26 @@ import (
 var ErrMissingEnvironmentVariables = errors.New("missing required environment variables")
 
 type Config struct {
-	ENV              string `mapstructure:"env"`
-	TelegramAPIToken string
-	DB               DB `mapstructure:"database"`
+	Env string `mapstructure:"env"`
+
+	TelegramAPIToken string `mapstructure:"-"`
+
+	NamesJSONPath string `mapstructure:"names_json_path"`
+	DB            DB     `mapstructure:"database"`
 }
 
 type DB struct {
-	URL             string
-	User            string
-	Password        string
-	Host            string        `mapstructure:"host"`
-	Port            string        `mapstructure:"port"`
-	Name            string        `mapstructure:"name"`
-	SSLMode         string        `mapstructure:"ssl_mode"`
+	URL string `mapstructure:"-"`
+
 	MaxConnections  int           `mapstructure:"max_connections"`
 	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
 }
 
-func (n DB) DSN() string {
-	if n.URL != "" {
-		return n.URL
+func (db DB) DSN() (string, error) {
+	if db.URL == "" {
+		return "", ErrMissingEnvironmentVariables
 	}
-	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		n.User, n.Password, n.Host, n.Port, n.Name, n.SSLMode,
-	)
+	return db.URL, nil
 }
 
 func Load() (*Config, error) {
@@ -45,8 +40,24 @@ func Load() (*Config, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath("./config")
 
+	v.SetDefault("env", "local")
+	v.SetDefault("names_json_path", "assets/asma-ul-husna-ru.json")
+	v.SetDefault("database.max_connections", 20)
+	v.SetDefault("database.max_conn_lifetime", "30s")
+
+	// ENV overrides
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	_ = v.BindEnv("telegram_api_token", "TELEGRAM_API_TOKEN")
+	_ = v.BindEnv("database_url", "DATABASE_URL")
+	_ = v.BindEnv("env", "APP_ENV")
+
 	if err := v.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("error loading config file: %w", err)
+		var fileLookupErr viper.ConfigFileNotFoundError
+		if !errors.As(err, &fileLookupErr) {
+			return nil, fmt.Errorf("error loading config file: %w", err)
+		}
 	}
 
 	var cfg Config
@@ -54,26 +65,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
 
-	cfg.ENV = os.Getenv("APP_ENV")
-
-	token := os.Getenv("TELEGRAM_API_TOKEN")
-	if token == "" {
-		return nil, ErrMissingEnvironmentVariables
-	}
-	cfg.TelegramAPIToken = token
-
-	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		cfg.DB.URL = dbURL
-		return &cfg, nil
-	}
-
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	if user == "" || password == "" {
+	cfg.TelegramAPIToken = v.GetString("telegram_api_token")
+	if cfg.TelegramAPIToken == "" {
 		return nil, ErrMissingEnvironmentVariables
 	}
 
-	cfg.DB.User = user
-	cfg.DB.Password = password
+	cfg.DB.URL = v.GetString("database_url")
+	if cfg.DB.URL == "" {
+		return nil, ErrMissingEnvironmentVariables
+	}
+
 	return &cfg, nil
 }

@@ -98,7 +98,12 @@ func main() {
 
 	nameService := service.NewNameService(nameRepo)
 
-	poolConfig, err := pgxpool.ParseConfig(cfg.DB.DSN())
+	connString, err := cfg.DB.DSN()
+	if err != nil {
+		lg.Fatal("failed to get database DSN", zap.Error(err))
+	}
+
+	poolConfig, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		lg.Fatal("failed to parse db config",
 			zap.Error(err),

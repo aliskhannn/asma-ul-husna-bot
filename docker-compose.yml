@@ -9,12 +9,9 @@ services:
       migrator:
         condition: service_completed_successfully
     environment:
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
+      - APP_ENV=${APP_ENV}
       - TELEGRAM_API_TOKEN=${TELEGRAM_API_TOKEN}
+      - DATABASE_URL=${DATABASE_URL}
     env_file:
       - .env
     networks:
@@ -29,7 +26,7 @@ services:
         condition: service_healthy
     environment:
       - GOOSE_DRIVER=${GOOSE_DRIVER}
-      - GOOSE_DBSTRING=host=${DB_HOST} port=${DB_PORT} user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME}
+      - GOOSE_DBSTRING=${GOOSE_DBSTRING}
       - GOOSE_MIGRATION_DIR=${GOOSE_MIGRATION_DIR}
     env_file:
       - .env

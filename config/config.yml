@@ -1,9 +1,6 @@
-env: "development" # development, production, local
+env: "local"
+names_json_path: "assets/asma-ul-husna-ru.json"
 
 database:
-  host: "db"
-  port: "5432"
-  name: "husna_db"
-  ssl_mode: "disable"
   max_connections: 20
   max_conn_lifetime: "30s"
