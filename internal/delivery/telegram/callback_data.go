@@ -121,10 +121,6 @@ func buildReminderToggleCallback() string {
 	return buildSettingsCallback(settingsReminders, reminderToggle)
 }
 
-func buildReminderSetTimeCallback(hour string) string {
-	return buildSettingsCallback(settingsReminders, reminderSetTime, hour)
-}
-
 func buildReminderStartQuizCallback() string {
 	return callbackData{
 		Action: actionReminder,

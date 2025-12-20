@@ -80,36 +80,6 @@ func (r *QuizRepository) GetByID(ctx context.Context, id int64) (*entities.QuizS
 	return &s, nil
 }
 
-func (r *QuizRepository) GetActiveByUser(ctx context.Context, userID int64) (*entities.QuizSession, error) {
-	query := `
-        SELECT id, user_id, current_question_num, correct_answers,
-               total_questions, quiz_mode, session_status,
-               started_at, completed_at
-        FROM quiz_sessions
-        WHERE user_id = $1 AND session_status = 'active'
-        ORDER BY started_at DESC
-        LIMIT 1
-    `
-
-	var s entities.QuizSession
-	err := r.db.QueryRow(ctx, query, userID).Scan(
-		&s.ID,
-		&s.UserID,
-		&s.CurrentQuestionNum,
-		&s.CorrectAnswers,
-		&s.TotalQuestions,
-		&s.QuizMode,
-		&s.SessionStatus,
-		&s.StartedAt,
-		&s.CompletedAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get active quiz session: %w", err)
-	}
-
-	return &s, nil
-}
-
 func (r *QuizRepository) Update(ctx context.Context, s *entities.QuizSession) error {
 	query := `
         UPDATE quiz_sessions
@@ -167,46 +137,4 @@ func (r *QuizRepository) SaveAnswer(ctx context.Context, a *entities.QuizAnswer)
 
 	a.ID = id
 	return nil
-}
-
-func (r *QuizRepository) GetAnswersBySession(ctx context.Context, sessionID int64) ([]*entities.QuizAnswer, error) {
-	query := `
-        SELECT id, user_id, session_id, name_number,
-               user_answer, correct_answer, question_type,
-               is_correct, answered_at
-        FROM quiz_answers
-        WHERE session_id = $1
-        ORDER BY id
-    `
-
-	rows, err := r.db.Query(ctx, query, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("get quiz answers by session: %w", err)
-	}
-	defer rows.Close()
-
-	var answers []*entities.QuizAnswer
-	for rows.Next() {
-		var a entities.QuizAnswer
-		if err := rows.Scan(
-			&a.ID,
-			&a.UserID,
-			&a.SessionID,
-			&a.NameNumber,
-			&a.UserAnswer,
-			&a.CorrectAnswer,
-			&a.QuestionType,
-			&a.IsCorrect,
-			&a.AnsweredAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan quiz answer: %w", err)
-		}
-		answers = append(answers, &a)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate quiz answers: %w", err)
-	}
-
-	return answers, nil
 }

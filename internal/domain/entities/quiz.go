@@ -35,26 +35,6 @@ func (qs *QuizSession) Complete() {
 	qs.CompletedAt = &now
 }
 
-func (qs *QuizSession) Abandon() {
-	qs.SessionStatus = "abandoned"
-	now := time.Now()
-	qs.CompletedAt = &now
-}
-
-func (qs *QuizSession) Progress() float64 {
-	if qs.TotalQuestions == 0 {
-		return 0
-	}
-	return float64(qs.CurrentQuestionNum) / float64(qs.TotalQuestions) * 100
-}
-
-func (qs *QuizSession) Accuracy() float64 {
-	if qs.CurrentQuestionNum == 0 {
-		return 0
-	}
-	return float64(qs.CorrectAnswers) / float64(qs.CurrentQuestionNum) * 100
-}
-
 type QuizAnswer struct {
 	ID            int64
 	UserID        int64

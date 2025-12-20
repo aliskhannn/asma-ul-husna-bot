@@ -141,18 +141,6 @@ func (r *ProgressRepository) GetByUserID(ctx context.Context, userID int64) ([]*
 	return progress, nil
 }
 
-// DeleteByUserID deletes all progress records for a given user.
-func (r *ProgressRepository) DeleteByUserID(ctx context.Context, userID int64) error {
-	query := `DELETE FROM user_progress WHERE user_id = $1`
-
-	_, err := r.db.Exec(ctx, query, userID)
-	if err != nil {
-		return fmt.Errorf("delete by user id: %w", err)
-	}
-
-	return nil
-}
-
 // MarkAsViewed creates a progress record when user views a name via it's number.
 // Does nothing if record already exists.
 func (r *ProgressRepository) MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error {
@@ -168,105 +156,6 @@ func (r *ProgressRepository) MarkAsViewed(ctx context.Context, userID int64, nam
 	}
 
 	return nil
-}
-
-// GetViewedCount returns the count of names the user has viewed.
-func (r *ProgressRepository) GetViewedCount(ctx context.Context, userID int64) (int, error) {
-	query := "SELECT COUNT(*) FROM user_progress WHERE user_id = $1"
-
-	var count int
-	err := r.db.QueryRow(ctx, query, userID).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("get viewed count: %w", err)
-	}
-
-	return count, nil
-}
-
-// MarkAsLearned marks a name as learned (sets is_learned = true).
-func (r *ProgressRepository) MarkAsLearned(ctx context.Context, userID int64, nameNumber int) error {
-	query := `
-		INSERT INTO user_progress (user_id, name_number, is_learned, last_reviewed_at, correct_count)
-		VALUES ($1, $2, false, NULL, $5)
-		ON CONFLICT (user_id, name_number)
-		DO UPDATE SET is_learned = true
-	`
-
-	_, err := r.db.Exec(ctx, query, userID, nameNumber)
-	if err != nil {
-		return fmt.Errorf("mark as learned: %w", err)
-	}
-
-	return nil
-}
-
-// IsLearned checks if a name is marked as learned.
-func (r *ProgressRepository) IsLearned(ctx context.Context, userID int64, nameNumber int) (bool, error) {
-	query := `
-		SELECT is_learned
-		FROM user_progress
-		WHERE user_id = $1 AND name_number = $2
-	`
-
-	var isLearned bool
-	err := r.db.QueryRow(ctx, query, userID, nameNumber).Scan(&isLearned)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil // not viewed yet = not learned
-		}
-
-		return false, fmt.Errorf("is learned: %w", err)
-	}
-
-	return isLearned, nil
-}
-
-// GetLearnedNames returns a list of name numbers that are marked as learned.
-func (r *ProgressRepository) GetLearnedNames(ctx context.Context, userID int64) ([]int, error) {
-	query := `
-		SELECT name_number
-		FROM user_progress
-		WHERE user_id = $1 AND is_learned = true
-		ORDER BY name_number
-	`
-
-	rows, err := r.db.Query(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get learned names: %w", err)
-	}
-	defer rows.Close()
-
-	var nameNumbers []int
-	for rows.Next() {
-		var num int
-		if err = rows.Scan(&num); err != nil {
-			return nil, fmt.Errorf("scan learned name: %w", err)
-		}
-		nameNumbers = append(nameNumbers, num)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate learned names: %w", err)
-	}
-
-	return nameNumbers, nil
-}
-
-// CountLearned returns the count of learned names.
-func (r *ProgressRepository) CountLearned(ctx context.Context, userID int64) (int, error) {
-	query := `
-        SELECT COUNT(*) 
-        FROM user_progress 
-        WHERE user_id = $1 AND is_learned = true
-    `
-
-	var count int
-	err := r.db.QueryRow(ctx, query, userID).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count learned: %w", err)
-	}
-
-	return count, nil
 }
 
 // RecordReview updates progress after a quiz answer.
@@ -307,57 +196,6 @@ func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID in
 	rows, err := r.db.Query(ctx, query, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get names due for review: %w", err)
-	}
-	defer rows.Close()
-
-	nameNumbers := make([]int, 0, limit)
-	for rows.Next() {
-		var num int
-		if err = rows.Scan(&num); err != nil {
-			return nil, fmt.Errorf("scan review name: %w", err)
-		}
-		nameNumbers = append(nameNumbers, num)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate review names: %w", err)
-	}
-
-	return nameNumbers, nil
-}
-
-// CountDue shows how many names need to be repeated today.
-func (r *ProgressRepository) CountDue(ctx context.Context, userID int64) (int, error) {
-	query := `
-		SELECT COUNT(*)
-		FROM user_progress
-		WHERE user_id = $1
-		  AND next_review_at IS NOT NULL
-		  AND next_review_at <= NOW()
-	`
-	var count int
-	err := r.db.QueryRow(ctx, query, userID).Scan(&count)
-	return count, err
-}
-
-// GetNamesToReview returns names that need review based on spaced repetition algorithm.
-// Returns learned names that either:
-// - Have never been reviewed (last_reviewed_at IS NULL)
-// - Haven't been reviewed in 3+ days
-func (r *ProgressRepository) GetNamesToReview(ctx context.Context, userID int64, limit int) ([]int, error) {
-	query := `
-		SELECT name_number
-		FROM user_progress
-		WHERE user_id = $1
-			AND is_learned = true
-			AND (last_reviewed_at IS NULL OR last_reviewed_at < NOW() - INTERVAL '3 days')
-		ORDER BY last_reviewed_at NULLS FIRST
-		LIMIT $2
-	`
-
-	rows, err := r.db.Query(ctx, query, userID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get names to review: %w", err)
 	}
 	defer rows.Close()
 
@@ -432,26 +270,6 @@ func (r *ProgressRepository) GetNewNames(ctx context.Context, userID int64, limi
 	}
 
 	return nameNumbers, nil
-}
-
-func (r *ProgressRepository) HasNewNames(ctx context.Context, userID int64) (bool, error) {
-	query := `
-        SELECT EXISTS (
-            SELECT 1
-            FROM generate_series(1, 99) AS name_num
-            WHERE NOT EXISTS (
-                SELECT 1 FROM user_progress up WHERE up.name_number = name_num AND up.user_id = $1
-            )
-        )
-    `
-
-	var hasNew bool
-	err := r.db.QueryRow(ctx, query, userID).Scan(&hasNew)
-	if err != nil {
-		return false, fmt.Errorf("has new names: %w", err)
-	}
-
-	return hasNew, nil
 }
 
 // GetInProgressNames returns names that are viewed but not yet learned.
@@ -619,7 +437,9 @@ func (r *ProgressRepository) GetOrCreateDailyName(
 	if err != nil {
 		return 0, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	queryGet := `
         SELECT name_number 
@@ -698,7 +518,7 @@ func (r *ProgressRepository) GetOrCreateDailyName(
 			return 0, fmt.Errorf("save daily name: %w", err)
 		}
 	}
-	
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit transaction: %w", err)
 	}

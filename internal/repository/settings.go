@@ -65,34 +65,6 @@ func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*en
 	return &settings, nil
 }
 
-// Update updates all settings fields.
-func (r *SettingsRepository) Update(ctx context.Context, settings *entities.UserSettings) error {
-	query := `
-        UPDATE user_settings
-        SET names_per_day = $2,
-            quiz_mode = $3,
-            language_code = $4,
-            updated_at = NOW()
-        WHERE user_id = $1
-    `
-
-	cmdTag, err := r.db.Exec(ctx, query,
-		settings.UserID,
-		settings.NamesPerDay,
-		settings.QuizMode,
-		settings.LanguageCode,
-	)
-	if err != nil {
-		return fmt.Errorf("update settings: %w", err)
-	}
-
-	if cmdTag.RowsAffected() == 0 {
-		return ErrSettingsNotFound
-	}
-
-	return nil
-}
-
 // UpdateNamesPerDay updates only the names_per_day field.
 func (r *SettingsRepository) UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error {
 	query := `
@@ -128,18 +100,6 @@ func (r *SettingsRepository) UpdateQuizMode(ctx context.Context, userID int64, q
 
 	if cmdTag.RowsAffected() == 0 {
 		return ErrSettingsNotFound
-	}
-
-	return nil
-}
-
-// Delete deletes settings for a user.
-func (r *SettingsRepository) Delete(ctx context.Context, userID int64) error {
-	query := `DELETE FROM user_settings WHERE user_id = $1`
-
-	_, err := r.db.Exec(ctx, query, userID)
-	if err != nil {
-		return fmt.Errorf("delete settings: %w", err)
 	}
 
 	return nil

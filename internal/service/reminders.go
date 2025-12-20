@@ -10,19 +10,6 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
-// ReminderRepository manages reminder persistence.
-type ReminderRepository interface {
-	GetDueReminders(ctx context.Context) ([]*entities.ReminderWithUser, error)
-	MarkAsSent(ctx context.Context, userID int64, sentAt time.Time) error
-	GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error)
-	Upsert(ctx context.Context, rem *entities.UserReminders) error
-}
-
-// ReminderNotifier sends reminder notifications to users.
-type ReminderNotifier interface {
-	SendReminder(chatID int64, payload entities.ReminderPayload) error
-}
-
 // ReminderService handles reminder business logic.
 type ReminderService struct {
 	reminderRepo ReminderRepository
@@ -74,6 +61,156 @@ func (s *ReminderService) Start(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// GetByUserID retrieves reminder settings for a user.
+func (s *ReminderService) GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error) {
+	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get reminder: %w", err)
+	}
+
+	// If no reminder exists, create default.
+	if reminder == nil {
+		reminder = entities.NewUserReminders(userID)
+		if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
+			return nil, fmt.Errorf("create default reminder: %w", err)
+		}
+	}
+
+	return reminder, nil
+}
+
+// ToggleReminder enables or disables reminders for a user.
+func (s *ReminderService) ToggleReminder(ctx context.Context, userID int64) error {
+	reminder, err := s.GetByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get reminder: %w", err)
+	}
+
+	reminder.IsEnabled = !reminder.IsEnabled
+	reminder.UpdatedAt = time.Now()
+
+	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
+		return fmt.Errorf("upsert reminder: %w", err)
+	}
+
+	s.logger.Info("reminder toggled",
+		zap.Int64("user_id", userID),
+		zap.Bool("enabled", reminder.IsEnabled))
+
+	return nil
+}
+
+// SetReminderIntervalHours updates the reminder interval hours.
+func (s *ReminderService) SetReminderIntervalHours(
+	ctx context.Context,
+	userID int64,
+	intervalHours int,
+) error {
+	reminder, err := s.GetByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get reminder: %w", err)
+	}
+
+	reminder.IntervalHours = intervalHours
+	reminder.IsEnabled = true // enable when setting interval hours
+	reminder.UpdatedAt = time.Now()
+
+	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
+		return fmt.Errorf("upsert reminder: %w", err)
+	}
+
+	s.logger.Info("reminder frequency set",
+		zap.Int64("user_id", userID),
+		zap.Int("interval hours", intervalHours),
+	)
+
+	return nil
+}
+
+// SetReminderTimeWindow updates the start and end time for reminders.
+func (s *ReminderService) SetReminderTimeWindow(
+	ctx context.Context,
+	userID int64,
+	startTime, endTime string, // "HH:MM:SS" format
+) error {
+	// Validate time format.
+	if _, err := time.Parse("15:04:05", startTime); err != nil {
+		return fmt.Errorf("invalid start time format: %w", err)
+	}
+	if _, err := time.Parse("15:04:05", endTime); err != nil {
+		return fmt.Errorf("invalid end time format: %w", err)
+	}
+
+	// Validate that end time is after start time.
+	if endTime <= startTime {
+		return fmt.Errorf("end time must be after start time")
+	}
+
+	reminder, err := s.GetByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get reminder: %w", err)
+	}
+
+	reminder.StartTimeUTC = startTime
+	reminder.EndTimeUTC = endTime
+	reminder.IsEnabled = true // enable when setting time window
+	reminder.UpdatedAt = time.Now()
+
+	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
+		return fmt.Errorf("upsert reminder: %w", err)
+	}
+
+	s.logger.Info("reminder time window set",
+		zap.Int64("user_id", userID),
+		zap.String("start_time", startTime),
+		zap.String("end_time", endTime))
+
+	return nil
+}
+
+// SnoozeReminder postpones the next reminder by marking last sent time.
+func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, duration time.Duration) error {
+	reminder, err := s.GetByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get reminder: %w", err)
+	}
+
+	// Calculate snooze time (current time - interval hours + snooze duration)
+	// This way, next reminder will be sent after duration.
+	snoozeTime := time.Now().UTC().Add(duration - time.Duration(reminder.IntervalHours)*time.Hour)
+	reminder.LastSentAt = &snoozeTime
+	reminder.UpdatedAt = time.Now()
+
+	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
+		return fmt.Errorf("upsert reminder: %w", err)
+	}
+
+	s.logger.Info("reminder snoozed",
+		zap.Int64("user_id", userID),
+		zap.Duration("duration", duration))
+
+	return nil
+}
+
+// DisableReminder disables reminders for a user.
+func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) error {
+	reminder, err := s.GetByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get reminder: %w", err)
+	}
+
+	reminder.IsEnabled = false
+	reminder.UpdatedAt = time.Now()
+
+	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
+		return fmt.Errorf("upsert reminder: %w", err)
+	}
+
+	s.logger.Info("reminder disabled", zap.Int64("user_id", userID))
+
+	return nil
 }
 
 // sendHourlyReminders processes and sends all due reminders.
@@ -267,154 +404,4 @@ func (s *ReminderService) buildReminderStats(
 		NotStarted:     stats.NotStarted,
 		DaysToComplete: settings.DaysToComplete(stats.Learned),
 	}, nil
-}
-
-// GetByUserID retrieves reminder settings for a user.
-func (s *ReminderService) GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error) {
-	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get reminder: %w", err)
-	}
-
-	// If no reminder exists, create default.
-	if reminder == nil {
-		reminder = entities.NewUserReminders(userID)
-		if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
-			return nil, fmt.Errorf("create default reminder: %w", err)
-		}
-	}
-
-	return reminder, nil
-}
-
-// ToggleReminder enables or disables reminders for a user.
-func (s *ReminderService) ToggleReminder(ctx context.Context, userID int64) error {
-	reminder, err := s.GetByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("get reminder: %w", err)
-	}
-
-	reminder.IsEnabled = !reminder.IsEnabled
-	reminder.UpdatedAt = time.Now()
-
-	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
-		return fmt.Errorf("upsert reminder: %w", err)
-	}
-
-	s.logger.Info("reminder toggled",
-		zap.Int64("user_id", userID),
-		zap.Bool("enabled", reminder.IsEnabled))
-
-	return nil
-}
-
-// SetReminderIntervalHours updates the reminder interval hours.
-func (s *ReminderService) SetReminderIntervalHours(
-	ctx context.Context,
-	userID int64,
-	intervalHours int,
-) error {
-	reminder, err := s.GetByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("get reminder: %w", err)
-	}
-
-	reminder.IntervalHours = intervalHours
-	reminder.IsEnabled = true // enable when setting interval hours
-	reminder.UpdatedAt = time.Now()
-
-	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
-		return fmt.Errorf("upsert reminder: %w", err)
-	}
-
-	s.logger.Info("reminder frequency set",
-		zap.Int64("user_id", userID),
-		zap.Int("interval hours", intervalHours),
-	)
-
-	return nil
-}
-
-// SetReminderTimeWindow updates the start and end time for reminders.
-func (s *ReminderService) SetReminderTimeWindow(
-	ctx context.Context,
-	userID int64,
-	startTime, endTime string, // "HH:MM:SS" format
-) error {
-	// Validate time format.
-	if _, err := time.Parse("15:04:05", startTime); err != nil {
-		return fmt.Errorf("invalid start time format: %w", err)
-	}
-	if _, err := time.Parse("15:04:05", endTime); err != nil {
-		return fmt.Errorf("invalid end time format: %w", err)
-	}
-
-	// Validate that end time is after start time.
-	if endTime <= startTime {
-		return fmt.Errorf("end time must be after start time")
-	}
-
-	reminder, err := s.GetByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("get reminder: %w", err)
-	}
-
-	reminder.StartTimeUTC = startTime
-	reminder.EndTimeUTC = endTime
-	reminder.IsEnabled = true // enable when setting time window
-	reminder.UpdatedAt = time.Now()
-
-	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
-		return fmt.Errorf("upsert reminder: %w", err)
-	}
-
-	s.logger.Info("reminder time window set",
-		zap.Int64("user_id", userID),
-		zap.String("start_time", startTime),
-		zap.String("end_time", endTime))
-
-	return nil
-}
-
-// SnoozeReminder postpones the next reminder by marking last sent time.
-func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, duration time.Duration) error {
-	reminder, err := s.GetByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("get reminder: %w", err)
-	}
-
-	// Calculate snooze time (current time - interval hours + snooze duration)
-	// This way, next reminder will be sent after duration.
-	snoozeTime := time.Now().UTC().Add(duration - time.Duration(reminder.IntervalHours)*time.Hour)
-	reminder.LastSentAt = &snoozeTime
-	reminder.UpdatedAt = time.Now()
-
-	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
-		return fmt.Errorf("upsert reminder: %w", err)
-	}
-
-	s.logger.Info("reminder snoozed",
-		zap.Int64("user_id", userID),
-		zap.Duration("duration", duration))
-
-	return nil
-}
-
-// DisableReminder disables reminders for a user.
-func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) error {
-	reminder, err := s.GetByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("get reminder: %w", err)
-	}
-
-	reminder.IsEnabled = false
-	reminder.UpdatedAt = time.Now()
-
-	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
-		return fmt.Errorf("upsert reminder: %w", err)
-	}
-
-	s.logger.Info("reminder disabled", zap.Int64("user_id", userID))
-
-	return nil
 }

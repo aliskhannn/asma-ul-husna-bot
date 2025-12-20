@@ -11,27 +11,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 )
 
-type NameRepo interface {
-	GetByNumber(_ context.Context, number int) (*entities.Name, error)
-	GetAll(_ context.Context) ([]*entities.Name, error)
-}
-
-type ProgressRepo interface {
-	GetByUserID(ctx context.Context, userID int64) ([]*entities.UserProgress, error)
-	RecordReview(ctx context.Context, userID int64, nameNumber int, isCorrect bool, reviewedAt time.Time) error
-	GetNamesToReview(ctx context.Context, userID int64, limit int) ([]int, error)
-	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
-	GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error)
-	Get(ctx context.Context, userID int64, nameNumber int) (*entities.UserProgress, error)
-	Upsert(ctx context.Context, progress *entities.UserProgress) error
-}
-
-type QuizRepo interface {
-	Create(ctx context.Context, s *entities.QuizSession) (int64, error)
-	GetByID(ctx context.Context, id int64) (*entities.QuizSession, error)
-	Update(ctx context.Context, s *entities.QuizSession) error
-	SaveAnswer(ctx context.Context, a *entities.QuizAnswer) error
-}
+var ErrNoQuestionsAvailable = errors.New("no questions available")
 
 var questionTypes = []string{"translation", "transliteration", "meaning", "arabic"}
 
@@ -42,24 +22,18 @@ const (
 	maxNew        = 10
 )
 
-var ErrNoQuestionsAvailable = errors.New("no questions available")
-
-type SettingsRepo interface {
-	GetByUserID(ctx context.Context, userID int64) (*entities.UserSettings, error)
-}
-
 type QuizService struct {
-	nameRepo     NameRepo
-	progressRepo ProgressRepo
-	quizRepo     QuizRepo
-	settingsRepo SettingsRepo
+	nameRepo     NameRepository
+	progressRepo ProgressRepository
+	quizRepo     QuizRepository
+	settingsRepo SettingsRepository
 }
 
 func NewQuizService(
-	nameRepo NameRepo,
-	progressRepo ProgressRepo,
-	quizRepo QuizRepo,
-	settingsRepo SettingsRepo,
+	nameRepo NameRepository,
+	progressRepo ProgressRepository,
+	quizRepo QuizRepository,
+	settingsRepo SettingsRepository,
 ) *QuizService {
 	return &QuizService{
 		nameRepo:     nameRepo,
@@ -131,6 +105,54 @@ func (s *QuizService) GenerateQuiz(
 	return session, questions, nil
 }
 
+func (s *QuizService) GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error) {
+	return s.quizRepo.GetByID(ctx, sessionID)
+}
+
+func (s *QuizService) CheckAndSaveAnswer(
+	ctx context.Context,
+	userID int64,
+	session *entities.QuizSession,
+	q *entities.Question,
+	selectedIndex int,
+) (*entities.QuizAnswer, error) {
+	if selectedIndex < 0 || selectedIndex >= len(q.Options) {
+		return nil, fmt.Errorf("invalid selected index")
+	}
+
+	userAnswer := q.Options[selectedIndex]
+	correctAnswer := q.CorrectAnswer
+
+	qa := entities.NewQuizAnswer(userID, session.ID, q.NameNumber, q.Type)
+	qa.CheckAnswer(userAnswer, correctAnswer)
+
+	if err := s.quizRepo.SaveAnswer(ctx, qa); err != nil {
+		return nil, err
+	}
+
+	reviewedAt := time.Now()
+
+	if err := s.progressRepo.RecordReview(ctx, userID, q.NameNumber, qa.IsCorrect, reviewedAt); err != nil {
+		return nil, err
+	}
+
+	if qa.IsCorrect {
+		session.CorrectAnswers++
+	}
+	session.CurrentQuestionNum++
+	if session.CurrentQuestionNum > session.TotalQuestions {
+		session.SessionStatus = "completed"
+		now := time.Now()
+		session.CompletedAt = &now
+	}
+
+	if err := s.quizRepo.Update(ctx, session); err != nil {
+		return nil, err
+	}
+
+	return qa, nil
+}
+
 func (s *QuizService) getDailyQuizNames(ctx context.Context, userID int64) ([]int, error) {
 	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, maxDueReviews)
 	if err != nil {
@@ -180,54 +202,6 @@ func (s *QuizService) getNewQuizNames(ctx context.Context, userID int64) ([]int,
 	}
 
 	return newNames, nil
-}
-
-func (s *QuizService) GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error) {
-	return s.quizRepo.GetByID(ctx, sessionID)
-}
-
-func (s *QuizService) CheckAndSaveAnswer(
-	ctx context.Context,
-	userID int64,
-	session *entities.QuizSession,
-	q *entities.Question,
-	selectedIndex int,
-) (*entities.QuizAnswer, error) {
-	if selectedIndex < 0 || selectedIndex >= len(q.Options) {
-		return nil, fmt.Errorf("invalid selected index")
-	}
-
-	userAnswer := q.Options[selectedIndex]
-	correctAnswer := q.CorrectAnswer
-
-	qa := entities.NewQuizAnswer(userID, session.ID, q.NameNumber, q.Type)
-	qa.CheckAnswer(userAnswer, correctAnswer)
-
-	if err := s.quizRepo.SaveAnswer(ctx, qa); err != nil {
-		return nil, err
-	}
-
-	reviewedAt := time.Now()
-
-	if err := s.progressRepo.RecordReview(ctx, userID, q.NameNumber, qa.IsCorrect, reviewedAt); err != nil {
-		return nil, err
-	}
-
-	if qa.IsCorrect {
-		session.CorrectAnswers++
-	}
-	session.CurrentQuestionNum++
-	if session.CurrentQuestionNum > session.TotalQuestions {
-		session.SessionStatus = "completed"
-		now := time.Now()
-		session.CompletedAt = &now
-	}
-
-	if err := s.quizRepo.Update(ctx, session); err != nil {
-		return nil, err
-	}
-
-	return qa, nil
 }
 
 func (s *QuizService) generateQuestions(
@@ -335,7 +309,7 @@ func (s *QuizService) generateTranslationQuestion(
 	return entities.Question{
 		NameNumber:    target.Number,
 		Type:          "translation",
-		Question:      fmt.Sprintf("Какое арабское имя означает *%s*?", target.Translation),
+		Question:      fmt.Sprintf("Какое арабское имя означает %s?", target.Translation),
 		Options:       options,
 		CorrectIndex:  correctIndex,
 		CorrectAnswer: target.ArabicName,
@@ -358,7 +332,7 @@ func (s *QuizService) generateTransliterationQuestion(
 	return entities.Question{
 		NameNumber:    target.Number,
 		Type:          "transliteration",
-		Question:      fmt.Sprintf("Что означает имя *%s*?", target.Transliteration),
+		Question:      fmt.Sprintf("Что означает имя %s?", target.Transliteration),
 		Options:       options,
 		CorrectIndex:  correctIndex,
 		CorrectAnswer: target.Translation,
@@ -386,7 +360,7 @@ func (s *QuizService) generateMeaningQuestion(
 	return entities.Question{
 		NameNumber:    target.Number,
 		Type:          "meaning",
-		Question:      fmt.Sprintf("Какое из имён соответствует значению: *%s*?", text),
+		Question:      fmt.Sprintf("Какое из имён соответствует значению: %s?", text),
 		Options:       options,
 		CorrectIndex:  correctIndex,
 		CorrectAnswer: target.Transliteration,
@@ -409,7 +383,7 @@ func (s *QuizService) generateArabicQuestion(
 	return entities.Question{
 		NameNumber:    target.Number,
 		Type:          "arabic",
-		Question:      fmt.Sprintf("Что означает арабское имя *%s*?", target.ArabicName),
+		Question:      fmt.Sprintf("Что означает арабское имя %s?", target.ArabicName),
 		Options:       options,
 		CorrectIndex:  correctIndex,
 		CorrectAnswer: target.Translation,

@@ -6,12 +6,6 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
-type NameRepository interface {
-	GetByNumber(_ context.Context, number int) (*entities.Name, error)
-	GetRandom(_ context.Context) (*entities.Name, error)
-	GetAll(_ context.Context) ([]*entities.Name, error)
-}
-
 type NameService struct {
 	repository NameRepository
 }

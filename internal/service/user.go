@@ -6,11 +6,6 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
-type UserRepository interface {
-	SaveUser(ctx context.Context, user *entities.User) error
-	UserExists(ctx context.Context, userID int64) (bool, error)
-}
-
 type UserService struct {
 	repository UserRepository
 }

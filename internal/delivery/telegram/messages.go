@@ -31,13 +31,6 @@ const (
 	msgUnknownCommand       = "Неизвестная команда. Список доступных команд:\n\n/all — посмотреть все имена\n/random — получить случайное имя\n/range N M — посмотреть имена с N по M"
 )
 
-// Reminder messages
-const (
-	msgReminderReview   = "🔔 Повторения!"
-	msgReminderNewNames = "📚 Новые имена!"
-	msgReminderGeneral  = "🔔 Время закрепить знания!"
-)
-
 const (
 	lrm          = "\u200E"
 	namesPerPage = 5
@@ -139,18 +132,18 @@ func formatNameMessage(name *entities.Name) string {
 	return fmt.Sprintf(
 		"%s%s%s %s\n\n%s %s\n%s %s\n\n%s %s",
 		lrm,
-		bold(fmt.Sprintf("%d", name.Number)),
+		md(fmt.Sprintf("%d", name.Number)),
 		md("."),
-		md(name.ArabicName),
+		bold(name.ArabicName),
 
-		bold("Транслитерация:"),
-		md(name.Transliteration),
+		md("Транслитерация:"),
+		bold(name.Transliteration),
 
-		bold("Перевод:"),
-		md(name.Translation),
+		md("Перевод:"),
+		bold(name.Translation),
 
-		bold("Значение:"),
-		md(name.Meaning),
+		md("Значение:"),
+		bold(name.Meaning),
 	)
 }
 
@@ -160,25 +153,23 @@ func buildNameResponse(
 	get func(ctx2 context.Context) (*entities.Name, error),
 	chatID int64,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig, error) {
-	msg := newMessage(chatID, "")
-
 	name, err := get(ctx)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			msg.Text = msgIncorrectNameNumber
+			msg := newPlainMessage(chatID, msgIncorrectNameNumber)
 			return msg, nil, nil
 		}
 
 		if errors.Is(err, repository.ErrRepositoryEmpty) {
-			msg.Text = msgNameUnavailable
+			msg := newPlainMessage(chatID, msgNameUnavailable)
 			return msg, nil, nil
 		}
 
-		msg.Text = msgNameUnavailable
+		msg := newPlainMessage(chatID, msgNameUnavailable)
 		return msg, nil, err
 	}
 
-	msg.Text = formatNameMessage(name)
+	msg := newMessage(chatID, formatNameMessage(name))
 
 	if name.Audio == "" {
 		return msg, nil, nil
@@ -303,9 +294,9 @@ func buildQuizStartMessage(mode string) string {
 
 	return fmt.Sprintf(
 		"%s\n\n%s %s\n\n%s",
-		md("🎯 Квиз начинается!"),
-		bold("Режим:"),
-		md(modeText),
+		bold("🎯 Квиз начинается!"),
+		md("Режим:"),
+		bold(modeText),
 		md("Выберите правильный вариант ответа для каждого вопроса."),
 	)
 }
@@ -331,7 +322,7 @@ func formatQuizQuestion(q *entities.Question, currentNum, totalQuestions int) st
 	return fmt.Sprintf(
 		"%s\n\n%s",
 		md(fmt.Sprintf("Вопрос %d из %d", currentNum, totalQuestions)),
-		md(q.Question),
+		bold(q.Question),
 	)
 }
 
@@ -355,8 +346,8 @@ func formatQuizResult(session *entities.QuizSession) string {
 		"%s %s\n\n%s %s\n%s\n\n%s",
 		md(emoji),
 		md("Квиз завершён!"),
-		bold("Результат:"),
-		md(fmt.Sprintf("%d/%d (%.0f%%)", session.CorrectAnswers, session.TotalQuestions, percentage)),
+		md("Результат:"),
+		bold(fmt.Sprintf("%d/%d (%.0f%%)", session.CorrectAnswers, session.TotalQuestions, percentage)),
 		md(progressBar),
 		md(message),
 	)
@@ -471,7 +462,7 @@ func buildReminderNotification(payload entities.ReminderPayload) string {
 	// Часть 3: Мотивационный блок (статистика)
 	sb.WriteString(md("📊 "))
 	sb.WriteString(bold("Ваш прогресс:"))
-	sb.WriteString("\n")
+	sb.WriteString("\n\n")
 
 	if payload.Stats.DueToday > 0 {
 		sb.WriteString(md(fmt.Sprintf("🔄 Повторов сегодня: %d\n", payload.Stats.DueToday)))

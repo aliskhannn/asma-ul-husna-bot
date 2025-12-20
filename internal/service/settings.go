@@ -8,14 +8,6 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 )
 
-type SettingsRepository interface {
-	Create(ctx context.Context, userID int64) error
-	GetByUserID(ctx context.Context, userID int64) (*entities.UserSettings, error)
-	Update(ctx context.Context, settings *entities.UserSettings) error
-	UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error
-	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
-}
-
 type SettingsService struct {
 	repository SettingsRepository
 }
@@ -39,10 +31,6 @@ func (s *SettingsService) GetOrCreate(ctx context.Context, userID int64) (*entit
 	}
 
 	return settings, nil
-}
-
-func (s *SettingsService) Update(ctx context.Context, settings *entities.UserSettings) error {
-	return s.repository.Update(ctx, settings)
 }
 
 func (s *SettingsService) UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error {
