@@ -2,13 +2,31 @@ package entities
 
 import "time"
 
+type ReminderWithUser struct {
+	UserReminders
+	UserID int64 `db:"user_id"`
+	ChatID int64 `db:"chat_id"`
+}
+
+type ReminderPayload struct {
+	Name  Name
+	Stats ReminderStats
+}
+
+// ReminderStats contains statistics for building reminder message.
+type ReminderStats struct {
+	DueToday       int
+	Learned        int
+	NotStarted     int
+	DaysToComplete int
+}
+
 type UserReminders struct {
 	UserID        int64
 	IsEnabled     bool
-	Frequency     string // "daily", "twice_daily", "custom"
-	StartTimeUTC  string // "09:00:00" формат HH:MM:SS
-	EndTimeUTC    string // "22:00:00"
-	IntervalHours int
+	IntervalHours int        // 1, 2, 3, 4
+	StartTimeUTC  string     // "09:00:00" формат HH:MM:SS
+	EndTimeUTC    string     // "22:00:00"
 	LastSentAt    *time.Time // nullable
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -19,10 +37,9 @@ func NewUserReminders(userID int64) *UserReminders {
 	return &UserReminders{
 		UserID:        userID,
 		IsEnabled:     true,
-		Frequency:     "daily",
+		IntervalHours: 1,
 		StartTimeUTC:  "08:00:00",
 		EndTimeUTC:    "20:00:00",
-		IntervalHours: 24,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}

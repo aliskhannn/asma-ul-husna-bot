@@ -3,16 +3,18 @@ package telegram
 import (
 	"context"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
 type UserService interface {
-	EnsureUser(ctx context.Context, userID int64, firstName, lastName string, username string, languageCode string) error
+	EnsureUser(ctx context.Context, userID, chatID int64) error
 }
 
 type NameService interface {
@@ -25,6 +27,10 @@ type ProgressService interface {
 	GetProgressSummary(ctx context.Context, userID int64, namesPerDay int) (*service.ProgressSummary, error)
 	MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error
 	RecordReviewSRS(ctx context.Context, userID int64, nameNumber int, quality entities.AnswerQuality) error
+	// TODO: remove below methods
+	GetStats(ctx context.Context, userID int64) (*repository.ProgressStats, error)
+	GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error)
+	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 }
 
 type SettingsService interface {
@@ -45,6 +51,15 @@ type QuizStorage interface {
 	Delete(sessionID int64)
 }
 
+type ReminderService interface {
+	GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error)
+	ToggleReminder(ctx context.Context, userID int64) error
+	SetReminderIntervalHours(ctx context.Context, userID int64, intervalHours int) error
+	SetReminderTimeWindow(ctx context.Context, userID int64, startTime, endTime string) error
+	SnoozeReminder(ctx context.Context, userID int64, duration time.Duration) error
+	DisableReminder(ctx context.Context, userID int64) error
+}
+
 type Handler struct {
 	bot             *tgbotapi.BotAPI
 	logger          *zap.Logger
@@ -54,6 +69,7 @@ type Handler struct {
 	settingsService SettingsService
 	quizService     QuizService
 	quizStorage     QuizStorage
+	reminderService ReminderService
 }
 
 func NewHandler(
@@ -65,6 +81,7 @@ func NewHandler(
 	settingsService SettingsService,
 	quizService QuizService,
 	quizStorage QuizStorage,
+	reminderService ReminderService,
 ) *Handler {
 	return &Handler{
 		bot:             bot,
@@ -75,6 +92,7 @@ func NewHandler(
 		settingsService: settingsService,
 		quizService:     quizService,
 		quizStorage:     quizStorage,
+		reminderService: reminderService,
 	}
 }
 
@@ -121,10 +139,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	err := h.userService.EnsureUser(
 		ctx,
 		from.ID,
-		from.FirstName,
-		from.LastName,
-		from.UserName,
-		from.LanguageCode,
+		update.Message.Chat.ID,
 	)
 	if err != nil {
 		h.logger.Error("failed to ensure user",
@@ -166,8 +181,11 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		case "settings":
 			_ = h.withErrorHandling(h.handleSettings(from.ID))(ctx, chatID)
 
+		case "test_reminder":
+			_ = h.withErrorHandling(h.handleTestReminder(from.ID))(ctx, chatID)
+
 		default:
-			msg.Text = msgUnknownCommand
+			msg = newPlainMessage(chatID, msgUnknownCommand)
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send unknown command message",
 					zap.Error(err),
@@ -238,4 +256,15 @@ func (h *Handler) storeQuizQuestions(sessionID int64, questions []entities.Quest
 
 func (h *Handler) getQuizQuestions(sessionID int64) []entities.Question {
 	return h.quizStorage.Get(sessionID)
+}
+
+// SendReminder sends a reminder notification to user
+func (h *Handler) SendReminder(chatID int64, payload entities.ReminderPayload) error {
+	text := buildReminderNotification(payload)
+	keyboard := buildReminderKeyboard()
+
+	msg := newMessage(chatID, text)
+	msg.ReplyMarkup = keyboard
+
+	return h.send(msg)
 }

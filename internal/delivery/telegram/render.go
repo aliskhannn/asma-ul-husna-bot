@@ -49,11 +49,19 @@ func (h *Handler) RenderSettings(ctx context.Context, userID int64) (string, tgb
 		return "", tgbotapi.InlineKeyboardMarkup{}, err
 	}
 
+	reminders, err := h.reminderService.GetByUserID(ctx, userID)
+	if err != nil {
+		return "", tgbotapi.InlineKeyboardMarkup{}, err
+	}
+
+	reminderStatus := formatReminderStatus(reminders)
+
 	text := fmt.Sprintf(
-		"%s\n\n%s\n%s\n",
+		"%s\n\n%s\n%s\n%s",
 		md("⚙️ Настройки"),
 		md(fmt.Sprintf("📚 Имён в день: %d", settings.NamesPerDay)),
 		md(fmt.Sprintf("🎲 Режим квиза: %s", formatQuizMode(settings.QuizMode))),
+		md(fmt.Sprintf("⏰ Напоминания: %s", reminderStatus)),
 	)
 
 	kb := buildSettingsKeyboard()

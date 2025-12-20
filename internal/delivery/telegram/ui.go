@@ -53,6 +53,9 @@ func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("🎲 Режим квиза", buildSettingsCallback(settingsQuizMode)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⏰ Напоминания", buildSettingsCallback(settingsReminders)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📊 Мой прогресс", buildProgressCallback()),
 		),
 	)
@@ -116,6 +119,93 @@ func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
+		),
+	)
+}
+
+// buildRemindersKeyboard builds keyboard for reminder settings
+func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKeyboardMarkup {
+	toggleText := "🔕 Отключить"
+	if !reminder.IsEnabled {
+		toggleText = "🔔 Включить"
+	}
+
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(toggleText, buildReminderToggleCallback()),
+		),
+	}
+
+	// Если напоминания включены, показываем настройки
+	if reminder.IsEnabled {
+		rows = append(rows,
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("📅 Частота", buildSettingsCallback(settingsReminders, "frequency")),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("⏰ Время", buildSettingsCallback(settingsReminders, "time")),
+			),
+		)
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
+	))
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// buildReminderKeyboard builds keyboard for reminder notification
+func buildReminderKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Начать квиз", buildReminderStartQuizCallback()),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⏰ Напомнить позже", buildReminderSnoozeCallback()),
+			tgbotapi.NewInlineKeyboardButtonData("🔕 Отключить", buildReminderDisableCallback()),
+		),
+	)
+}
+
+// buildFrequencyKeyboard builds keyboard for frequency selection
+func buildFrequencyKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Каждый час", buildSettingsCallback(settingsReminders, "freq", "every_1h")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Каждые 2 часа", buildSettingsCallback(settingsReminders, "freq", "every_2h")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Каждые 3 часа", buildSettingsCallback(settingsReminders, "freq", "every_3h")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Каждые 4 часа", buildSettingsCallback(settingsReminders, "freq", "every_4h")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад", buildSettingsCallback(settingsReminders)),
+		),
+	)
+}
+
+// buildTimeWindowKeyboard builds keyboard for time window selection
+func buildTimeWindowKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🌅 Утро (08:00-12:00)", buildSettingsCallback(settingsReminders, "time", "08-00-00", "12-00-00")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("☀️ День (12:00-18:00)", buildSettingsCallback(settingsReminders, "time", "12-00-00", "18-00-00")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🌙 Вечер (18:00-22:00)", buildSettingsCallback(settingsReminders, "time", "18-00-00", "22-00-00")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🌍 Весь день (08:00-22:00)", buildSettingsCallback(settingsReminders, "time", "08-00-00", "22-00-00")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад", buildSettingsCallback(settingsReminders)),
 		),
 	)
 }

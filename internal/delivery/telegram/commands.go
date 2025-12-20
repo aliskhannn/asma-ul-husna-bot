@@ -213,3 +213,43 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 		return h.sendQuizQuestion(chatID, session, &questions[0], 1)
 	}
 }
+
+// handleTestReminder отправляет тестовое напоминание (dev only)
+func (h *Handler) handleTestReminder(userID int64) HandlerFunc {
+	return func(ctx context.Context, chatID int64) error {
+		// Получаем настройки
+		settings, err := h.settingsService.GetOrCreate(ctx, userID)
+		if err != nil {
+			return h.send(newPlainMessage(chatID, "Ошибка настроек"))
+		}
+
+		// Получаем прогресс
+		summary, err := h.progressService.GetProgressSummary(ctx, userID, settings.NamesPerDay)
+		if err != nil {
+			return h.send(newPlainMessage(chatID, "Ошибка прогресса"))
+		}
+
+		// Берём случайное имя (для простоты)
+		name, err := h.nameService.GetRandom(ctx)
+		if err != nil || name == nil {
+			return h.send(newPlainMessage(chatID, "Нет доступных имён"))
+		}
+
+		// Формируем статистику
+		stats := entities.ReminderStats{
+			DueToday:       3,
+			Learned:        summary.Learned,
+			NotStarted:     summary.NotStarted,
+			DaysToComplete: settings.DaysToComplete(summary.Learned),
+		}
+
+		// Формируем payload
+		payload := entities.ReminderPayload{
+			Name:  *name,
+			Stats: stats,
+		}
+
+		// Отправляем
+		return h.SendReminder(chatID, payload)
+	}
+}

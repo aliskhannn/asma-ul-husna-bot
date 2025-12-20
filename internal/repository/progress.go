@@ -434,6 +434,26 @@ func (r *ProgressRepository) GetNewNames(ctx context.Context, userID int64, limi
 	return nameNumbers, nil
 }
 
+func (r *ProgressRepository) HasNewNames(ctx context.Context, userID int64) (bool, error) {
+	query := `
+        SELECT EXISTS (
+            SELECT 1
+            FROM generate_series(1, 99) AS name_num
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_progress up WHERE up.name_number = name_num AND up.user_id = $1
+            )
+        )
+    `
+
+	var hasNew bool
+	err := r.db.QueryRow(ctx, query, userID).Scan(&hasNew)
+	if err != nil {
+		return false, fmt.Errorf("has new names: %w", err)
+	}
+
+	return hasNew, nil
+}
+
 // GetInProgressNames returns names that are viewed but not yet learned.
 func (r *ProgressRepository) GetInProgressNames(ctx context.Context, userID int64) ([]int, error) {
 	query := `
@@ -559,4 +579,182 @@ func (r *ProgressRepository) GetLastActivityDate(ctx context.Context, userID int
 	}
 
 	return lastActivity, nil
+}
+
+func (r *ProgressRepository) GetNextDueName(ctx context.Context, userID int64) (int, error) {
+	query := `
+        SELECT name_number
+        FROM user_progress
+        WHERE user_id = $1 
+          AND next_review_at IS NOT NULL 
+          AND next_review_at <= NOW()
+        ORDER BY next_review_at
+        LIMIT 1
+    `
+
+	var nameNumber int
+	err := r.db.QueryRow(ctx, query, userID).Scan(&nameNumber)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil // нет due имён
+		}
+		return 0, fmt.Errorf("get next due name: %w", err)
+	}
+
+	return nameNumber, nil
+}
+
+func (r *ProgressRepository) GetOrCreateDailyName(
+	ctx context.Context,
+	userID int64,
+	dateUTC time.Time,
+	namesPerDay int,
+) (int, error) {
+	if namesPerDay < 1 {
+		namesPerDay = 1
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	queryGet := `
+        SELECT name_number 
+        FROM user_daily_name 
+        WHERE user_id = $1 AND date_utc = $2
+        ORDER BY slot_index
+        FOR UPDATE
+    `
+
+	rows, err := tx.Query(ctx, queryGet, userID, dateUTC.Format("2006-01-02"))
+	if err != nil {
+		return 0, fmt.Errorf("check daily names: %w", err)
+	}
+
+	var existingNumbers []int
+	for rows.Next() {
+		var num int
+		if err := rows.Scan(&num); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan daily name: %w", err)
+		}
+		existingNumbers = append(existingNumbers, num)
+	}
+	rows.Close()
+
+	if len(existingNumbers) > 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return 0, fmt.Errorf("commit transaction: %w", err)
+		}
+		return existingNumbers[0], nil
+	}
+
+	queryNew := `
+        SELECT n.number
+        FROM generate_series(1, 99) AS n(number)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM user_progress up 
+            WHERE up.user_id = $1 AND up.name_number = n.number
+        )
+        ORDER BY n.number
+        LIMIT $2
+    `
+
+	rows, err = tx.Query(ctx, queryNew, userID, namesPerDay)
+	if err != nil {
+		return 0, fmt.Errorf("get new names for daily: %w", err)
+	}
+
+	var newNumbers []int
+	for rows.Next() {
+		var num int
+		if err := rows.Scan(&num); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan new name: %w", err)
+		}
+		newNumbers = append(newNumbers, num)
+	}
+	rows.Close()
+
+	if len(newNumbers) == 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return 0, fmt.Errorf("commit transaction: %w", err)
+		}
+		return 0, nil
+	}
+
+	queryInsert := `
+        INSERT INTO user_daily_name (user_id, date_utc, name_number, slot_index, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id, date_utc, slot_index) DO NOTHING
+    `
+
+	for i, num := range newNumbers {
+		_, err = tx.Exec(ctx, queryInsert, userID, dateUTC.Format("2006-01-02"), num, i)
+		if err != nil {
+			return 0, fmt.Errorf("save daily name: %w", err)
+		}
+	}
+	
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return newNumbers[0], nil
+}
+
+func (r *ProgressRepository) GetNextDailyName(
+	ctx context.Context,
+	userID int64,
+	dateUTC time.Time,
+) (int, error) {
+	query := `
+        SELECT udn.name_number
+        FROM user_daily_name udn
+        LEFT JOIN user_progress up 
+            ON up.user_id = udn.user_id 
+            AND up.name_number = udn.name_number
+        WHERE udn.user_id = $1 
+          AND udn.date_utc = $2
+          AND (up.last_reviewed_at IS NULL OR up.last_reviewed_at < udn.created_at)
+        ORDER BY udn.slot_index
+        LIMIT 1
+    `
+
+	var nameNumber int
+	err := r.db.QueryRow(ctx, query, userID, dateUTC.Format("2006-01-02")).Scan(&nameNumber)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("get next daily name: %w", err)
+	}
+
+	return nameNumber, nil
+}
+
+func (r *ProgressRepository) GetRandomLearnedName(ctx context.Context, userID int64) (int, error) {
+	query := `
+        SELECT name_number
+        FROM user_progress
+        WHERE user_id = $1
+        ORDER BY RANDOM()
+        LIMIT 1
+    `
+
+	var nameNumber int
+	err := r.db.QueryRow(ctx, query, userID).Scan(&nameNumber)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("get random learned name: %w", err)
+	}
+
+	return nameNumber, nil
 }

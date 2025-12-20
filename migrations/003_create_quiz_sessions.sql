@@ -24,8 +24,8 @@ CREATE INDEX idx_quiz_sessions_completed ON quiz_sessions(user_id, completed_at)
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS quiz_sessions;
-
 DROP INDEX idx_quiz_sessions_user_active;
 DROP INDEX idx_quiz_sessions_completed;
+
+DROP TABLE IF EXISTS quiz_sessions CASCADE;
 -- +goose StatementEnd

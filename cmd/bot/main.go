@@ -28,7 +28,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer lg.Sync()
+	defer func() {
+		_ = lg.Sync()
+	}()
 
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramAPIToken)
 	if err != nil {
@@ -122,18 +124,19 @@ func main() {
 	defer pool.Close()
 
 	userRepo := repository.NewUserRepository(pool)
-
 	userService := service.NewUserService(userRepo)
 
 	progressRepo := repository.NewProgressRepository(pool)
-	settingsRepo := repository.NewSettingsRepository(pool)
-
 	progressService := service.NewProgressService(progressRepo)
+
+	settingsRepo := repository.NewSettingsRepository(pool)
 	settingsService := service.NewSettingsService(settingsRepo)
 
 	quizRepo := repository.NewQuizRepository(pool)
-
 	quizService := service.NewQuizService(nameRepo, progressRepo, quizRepo, settingsRepo)
+
+	remindersRepo := repository.NewRemindersRepository(pool)
+	remindersService := service.NewReminderService(remindersRepo, progressRepo, settingsRepo, nameRepo, lg)
 
 	quizStorage := storage.NewQuizStorage()
 
@@ -146,7 +149,13 @@ func main() {
 		settingsService,
 		quizService,
 		quizStorage,
+		remindersService,
 	)
+
+	remindersService.SetNotifier(handler)
+
+	go remindersService.Start(ctx)
+
 	if err := handler.Run(ctx); err != nil {
 		lg.Error("handler run failed",
 			zap.Error(err),

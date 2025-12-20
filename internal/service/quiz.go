@@ -35,6 +35,13 @@ type QuizRepo interface {
 
 var questionTypes = []string{"translation", "transliteration", "meaning", "arabic"}
 
+const (
+	maxDueReviews = 20
+	maxNewNames   = 5
+	maxReviews    = 30
+	maxNew        = 10
+)
+
 var ErrNoQuestionsAvailable = errors.New("no questions available")
 
 type SettingsRepo interface {
@@ -74,49 +81,29 @@ func (s *QuizService) GenerateQuiz(
 		settings = entities.NewUserSettings(userID)
 	}
 
-	reviewLimit := settings.MaxReviewsPerDay
-	if reviewLimit == 0 {
-		reviewLimit = 50
-	}
-
 	var nameNumbers []int
 
 	switch mode {
 	case "daily", "mixed":
 		// 1. First, we take repetitions (priority!).
-		reviewNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, reviewLimit)
+		nameNumbers, err = s.getDailyQuizNames(ctx, userID)
 		if err != nil {
 			return nil, nil, err
 		}
-
-		// 2. Add new names to the quiz length.
-		newLimit := settings.NamesPerDay
-		if newLimit < 0 {
-			newLimit = 0
-		}
-
-		newNames, err := s.progressRepo.GetNewNames(ctx, userID, newLimit)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		nameNumbers = append(reviewNames, newNames...)
 
 	case "review":
 		// Only repetitions.
-		reviewNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, reviewLimit)
+		nameNumbers, err = s.getReviewQuizNames(ctx, userID, settings)
 		if err != nil {
 			return nil, nil, err
 		}
-		nameNumbers = reviewNames
 
 	case "new":
 		// New only.
-		newNames, err := s.progressRepo.GetNewNames(ctx, userID, settings.NamesPerDay)
+		nameNumbers, err = s.getNewQuizNames(ctx, userID)
 		if err != nil {
 			return nil, nil, err
 		}
-		nameNumbers = newNames
 
 	default:
 		return nil, nil, fmt.Errorf("unknown quiz mode: %s", mode)
@@ -142,6 +129,57 @@ func (s *QuizService) GenerateQuiz(
 	}
 
 	return session, questions, nil
+}
+
+func (s *QuizService) getDailyQuizNames(ctx context.Context, userID int64) ([]int, error) {
+	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, maxDueReviews)
+	if err != nil {
+		return nil, fmt.Errorf("get names due for review: %w", err)
+	}
+
+	newNamesCount := 0
+	if len(dueNames) < 5 {
+		newNamesCount = maxNewNames - len(dueNames)
+		if newNamesCount > maxNewNames {
+			newNamesCount = maxNewNames
+		}
+	}
+
+	var nameNumbers []int
+	nameNumbers = append(nameNumbers, dueNames...)
+
+	if newNamesCount > 0 {
+		newNames, err := s.progressRepo.GetNewNames(ctx, userID, newNamesCount)
+		if err != nil {
+			return nil, fmt.Errorf("get new names: %w", err)
+		}
+		nameNumbers = append(nameNumbers, newNames...)
+	}
+
+	return nameNumbers, nil
+}
+
+func (s *QuizService) getReviewQuizNames(ctx context.Context, userID int64, settings *entities.UserSettings) ([]int, error) {
+	reviewLimit := settings.MaxReviewsPerDay
+	if reviewLimit == 0 || reviewLimit > maxReviews {
+		reviewLimit = maxReviews
+	}
+
+	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, reviewLimit)
+	if err != nil {
+		return nil, fmt.Errorf("get due names: %w", err)
+	}
+
+	return dueNames, nil
+}
+
+func (s *QuizService) getNewQuizNames(ctx context.Context, userID int64) ([]int, error) {
+	newNames, err := s.progressRepo.GetNewNames(ctx, userID, maxNew)
+	if err != nil {
+		return nil, fmt.Errorf("get new names: %w", err)
+	}
+
+	return newNames, nil
 }
 
 func (s *QuizService) GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error) {

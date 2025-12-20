@@ -14,11 +14,12 @@ import (
 )
 
 // Error messages.
-var (
+const (
 	msgIncorrectNameNumber  = "Некорректный ввод. Введите число от 1 до 99."
 	msgOutOfRangeNumber     = "Номер имени должен быть от 1 до 99."
-	msgUseRange             = "Используйте: /range 25 30"
-	msgInvalidRange         = "Некорректный диапазон. Пример: /range 25 30"
+	msgUseRange             = "Используйте: /range 25 30."
+	msgInvalidRange         = "Некорректный диапазон. Пример: /range 25 30."
+	msgInvalidIntervalHours = "Неверный интервал часов. Выберите 1, 2, 3 или 4."
 	msgNameUnavailable      = "Не удалось получить имя. Попробуйте позже."
 	msgProgressUnavailable  = "Не удалось получить прогресс. Попробуйте позже."
 	msgSettingsUnavailable  = "Не удалось получить настройки. Попробуйте позже."
@@ -28,6 +29,13 @@ var (
 	msgNoNewNames           = "Новых имён больше нет — вы прошли все 99 имён.\nПереключитесь на «Повторение» или «Смешанный», чтобы закреплять."
 	msgInternalError        = "Что‑то пошло не так. Попробуйте позже."
 	msgUnknownCommand       = "Неизвестная команда. Список доступных команд:\n\n/all — посмотреть все имена\n/random — получить случайное имя\n/range N M — посмотреть имена с N по M"
+)
+
+// Reminder messages
+const (
+	msgReminderReview   = "🔔 Повторения!"
+	msgReminderNewNames = "📚 Новые имена!"
+	msgReminderGeneral  = "🔔 Время закрепить знания!"
 )
 
 const (
@@ -129,9 +137,10 @@ func formatNameMessage(name *entities.Name) string {
 	// Everything coming from DB/service must be escaped.
 	// Markup is added around escaped text. [page:0]
 	return fmt.Sprintf(
-		"%s%s %s\n\n%s %s\n%s %s\n\n%s %s",
+		"%s%s%s %s\n\n%s %s\n%s %s\n\n%s %s",
 		lrm,
-		bold(fmt.Sprintf("%d.", name.Number)),
+		bold(fmt.Sprintf("%d", name.Number)),
+		md("."),
 		md(name.ArabicName),
 
 		bold("Транслитерация:"),
@@ -364,4 +373,119 @@ func formatAnswerFeedback(isCorrect bool, correctAnswer string) string {
 		md("Правильный ответ:"),
 		bold(correctAnswer),
 	)
+}
+
+// buildReminderSettingsMessage builds reminder settings screen message
+func buildReminderSettingsMessage(reminder *entities.UserReminders) string {
+	if reminder == nil {
+		return md("⏰ Настройки напоминаний") + "\n\n" +
+			md("Статус: ") + bold("🔕 Отключены") + "\n\n" +
+			md("Напоминания помогут не забывать о ежедневной практике изучения имён Аллаха.")
+	}
+
+	status := "🔕 Отключены"
+	details := ""
+
+	if reminder.IsEnabled {
+		status = "🔔 Включены"
+
+		freqText := formatIntervalHoursInt(reminder.IntervalHours)
+
+		startTime := reminder.StartTimeUTC[:5] // "08:00"
+		endTime := reminder.EndTimeUTC[:5]     // "20:00"
+
+		details = fmt.Sprintf(
+			"\n%s %s\n%s %s — %s",
+			md("📅 Частота:"),
+			bold(freqText),
+			md("⏰ Время:"),
+			bold(startTime),
+			bold(endTime),
+		)
+	}
+
+	return fmt.Sprintf(
+		"%s\n\n%s %s%s\n\n%s",
+		md("⏰ Настройки напоминаний"),
+		md("Статус:"),
+		bold(status),
+		details,
+		md("Напоминания помогут не забывать о ежедневной практике изучения имён Аллаха."),
+	)
+}
+
+func formatIntervalHoursInt(freq int) string {
+	switch freq {
+	case 1:
+		return "Каждый час"
+	case 2:
+		return "Каждые 2 часа"
+	case 3:
+		return "Каждые 3 часа"
+	case 4:
+		return "Каждые 4 часа"
+	default:
+		return fmt.Sprintf("Каждые %d часа", freq)
+	}
+}
+
+func formatIntervalHoursString(freq string) (int, error) {
+	switch freq {
+	case "every_1h":
+		return 1, nil
+	case "every_2h":
+		return 2, nil
+	case "every_3h":
+		return 3, nil
+	case "every_4h":
+		return 4, nil
+	default:
+		return 0, fmt.Errorf("invalid frequency %q", freq)
+	}
+}
+
+// formatReminderStatus formats reminder status for settings display
+func formatReminderStatus(reminder *entities.UserReminders) string {
+	if reminder == nil || !reminder.IsEnabled {
+		return "🔕 Отключены"
+	}
+
+	freqText := formatIntervalHoursInt(reminder.IntervalHours)
+
+	startTime := reminder.StartTimeUTC[:5] // "08:00"
+	endTime := reminder.EndTimeUTC[:5]     // "20:00"
+
+	return fmt.Sprintf("🔔 %s в день (%s-%s)", freqText, startTime, endTime)
+}
+
+func buildReminderNotification(payload entities.ReminderPayload) string {
+	var sb strings.Builder
+
+	// Часть 1: Карточка имени
+	sb.WriteString(formatNameMessage(&payload.Name))
+	sb.WriteString("\n\n")
+
+	// Часть 2: Разделитель
+	sb.WriteString("━━━━━━━━━━━━━━━━\n")
+
+	// Часть 3: Мотивационный блок (статистика)
+	sb.WriteString(md("📊 "))
+	sb.WriteString(bold("Ваш прогресс:"))
+	sb.WriteString("\n")
+
+	if payload.Stats.DueToday > 0 {
+		sb.WriteString(md(fmt.Sprintf("🔄 Повторов сегодня: %d\n", payload.Stats.DueToday)))
+	}
+
+	sb.WriteString(md(fmt.Sprintf("✅ Выучено: %d/99\n", payload.Stats.Learned)))
+
+	if payload.Stats.NotStarted > 0 {
+		sb.WriteString(md(fmt.Sprintf("🆕 Не начато: %d\n", payload.Stats.NotStarted)))
+	}
+
+	if payload.Stats.DaysToComplete > 0 {
+		sb.WriteString(md(fmt.Sprintf("📅 Примерно дней до финиша: %d", payload.Stats.DaysToComplete)))
+	}
+
+	return sb.String()
 }

@@ -15,6 +15,7 @@ type ProgressRepository interface {
 	RecordReview(ctx context.Context, userID int64, nameNumber int, isCorrect bool, reviewedAt time.Time) error
 
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
+	HasNewNames(ctx context.Context, userID int64) (bool, error)
 	GetNamesToReview(ctx context.Context, userID int64, limit int) ([]int, error)
 
 	GetStats(ctx context.Context, userID int64) (*repository.ProgressStats, error)
@@ -24,6 +25,11 @@ type ProgressRepository interface {
 	Get(ctx context.Context, userID int64, nameNumber int) (*entities.UserProgress, error)
 	GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error)
 	CountDue(ctx context.Context, userID int64) (int, error)
+
+	GetNextDueName(ctx context.Context, userID int64) (int, error)
+	GetOrCreateDailyName(ctx context.Context, userID int64, dateUTC time.Time, namesPerDay int) (int, error)
+	GetRandomLearnedName(ctx context.Context, userID int64) (int, error)
+	GetNextDailyName(ctx context.Context, userID int64, dateUTC time.Time) (int, error)
 }
 
 type ProgressService struct {

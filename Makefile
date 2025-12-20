@@ -30,7 +30,7 @@ migrate-create:
 	goose -dir migrations create $(name) sql
 
 docker-up:
-	docker compose up -d
+	docker compose up --build
 
 docker-down:
 	docker compose down

@@ -19,14 +19,8 @@ func NewUserService(repository UserRepository) *UserService {
 	return &UserService{repository: repository}
 }
 
-func (s *UserService) EnsureUser(
-	ctx context.Context,
-	userID int64,
-	firstName, lastName string,
-	username string,
-	languageCode string,
-) error {
-	user := entities.NewUser(userID, firstName, &lastName, &username, &languageCode)
+func (s *UserService) EnsureUser(ctx context.Context, userID, chatID int64) error {
+	user := entities.NewUser(userID, chatID)
 
 	exists, err := s.repository.UserExists(ctx, user.ID)
 	if err != nil {

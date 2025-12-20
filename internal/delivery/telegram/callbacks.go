@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -28,6 +30,8 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 		h.withCallbackErrorHandling(h.handleQuizCallback)(ctx, cb)
 	case actionProgress:
 		h.withCallbackErrorHandling(h.handleProgressCallback)(ctx, cb)
+	case actionReminder:
+		h.withCallbackErrorHandling(h.handleReminderCallback)(ctx, cb)
 	default:
 		h.logger.Warn("unknown callback action",
 			zap.String("action", data.Action),
@@ -176,6 +180,11 @@ func (h *Handler) handleSettingsCallback(ctx context.Context, cb *tgbotapi.Callb
 
 	// Apply setting value.
 	value := data.Params[1]
+
+	if subAction == settingsReminders {
+		return h.applyReminderSetting(ctx, cb, value, data.Params)
+	}
+
 	return h.applySettingValue(ctx, cb, subAction, value)
 }
 
@@ -193,6 +202,9 @@ func (h *Handler) handleSettingsNavigation(ctx context.Context, cb *tgbotapi.Cal
 		msg := "🎲 " + bold("Режим квиза") + "\n\n" +
 			md("Выберите, какие имена включать в квиз: только новые, только на повторение или оба варианта.")
 		return h.showSettingsSubmenu(cb, msg, buildQuizModeKeyboard())
+
+	case settingsReminders:
+		return h.showReminderSettings(ctx, cb)
 
 	default:
 		h.logger.Warn("unknown settings sub-action", zap.String("sub_action", subAction))
@@ -233,6 +245,22 @@ func (h *Handler) showSettingsSubmenu(cb *tgbotapi.CallbackQuery, message string
 	return h.send(edit)
 }
 
+// showReminderSettings displays reminder settings screen
+func (h *Handler) showReminderSettings(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	reminder, err := h.reminderService.GetByUserID(ctx, cb.From.ID)
+	if err != nil {
+		msg := newPlainMessage(cb.Message.Chat.ID, msgInternalError)
+		return h.send(msg)
+	}
+
+	text := buildReminderSettingsMessage(reminder)
+	keyboard := buildRemindersKeyboard(reminder)
+
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ReplyMarkup = &keyboard
+	return h.send(edit)
+}
+
 // applyNamesPerDay updates names per day setting.
 func (h *Handler) applyNamesPerDay(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
 	v, err := strconv.Atoi(value)
@@ -268,6 +296,159 @@ func (h *Handler) applyQuizMode(ctx context.Context, cb *tgbotapi.CallbackQuery,
 	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Режим квиза: %s", formatQuizMode(value)))
 }
 
+// handleReminderCallback handles reminder action callbacks
+func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	data := decodeCallback(cb.Data)
+
+	if len(data.Params) == 0 {
+		return fmt.Errorf("missing reminder action")
+	}
+
+	action := data.Params[0]
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+
+	switch action {
+	case reminderStartQuiz:
+		// Отвечаем на callback
+		answer := tgbotapi.NewCallback(cb.ID, "Запускаю квиз...")
+		if _, err := h.bot.Request(answer); err != nil {
+			h.logger.Error("failed to answer callback", zap.Error(err))
+		}
+
+		// Удаляем сообщение с напоминанием
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
+		if _, err := h.bot.Request(deleteMsg); err != nil {
+			h.logger.Error("failed to delete message", zap.Error(err))
+		}
+
+		// Запускаем квиз
+		return h.handleQuiz(userID)(ctx, chatID)
+
+	case reminderSnooze:
+		// Откладываем на 1 час
+		if err := h.reminderService.SnoozeReminder(ctx, userID, time.Hour); err != nil {
+			return err
+		}
+
+		answer := tgbotapi.NewCallback(cb.ID, "⏰ Напомню через 1 час")
+		if _, err := h.bot.Request(answer); err != nil {
+			h.logger.Error("failed to answer callback", zap.Error(err))
+		}
+
+		// Удаляем сообщение
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
+		if _, err := h.bot.Request(deleteMsg); err != nil {
+			h.logger.Error("failed to delete message", zap.Error(err))
+		}
+
+		return nil
+
+	case reminderDisable:
+		// Выключаем напоминания
+		if err := h.reminderService.DisableReminder(ctx, userID); err != nil {
+			return err
+		}
+
+		answer := tgbotapi.NewCallback(cb.ID, "🔕 Напоминания выключены")
+		if _, err := h.bot.Request(answer); err != nil {
+			h.logger.Error("failed to answer callback", zap.Error(err))
+		}
+
+		// Удаляем сообщение
+		deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
+		if _, err := h.bot.Request(deleteMsg); err != nil {
+			h.logger.Error("failed to delete message", zap.Error(err))
+		}
+
+		return nil
+
+	default:
+		return fmt.Errorf("unknown reminder action: %s", action)
+	}
+}
+
+// applyReminderSetting applies reminder setting changes
+func (h *Handler) applyReminderSetting(ctx context.Context, cb *tgbotapi.CallbackQuery, value string, params []string) error {
+	userID := cb.From.ID
+
+	switch value {
+	case reminderToggle:
+		if err := h.reminderService.ToggleReminder(ctx, userID); err != nil {
+			msg := newPlainMessage(cb.Message.Chat.ID, msgInternalError)
+			return h.send(msg)
+		}
+		return h.showReminderSettings(ctx, cb)
+
+	case "frequency":
+		return h.showFrequencyMenu(ctx, cb)
+
+	case "time":
+		if len(params) < 4 {
+			return h.showTimeWindowMenu(ctx, cb)
+		}
+
+		startTime := strings.ReplaceAll(params[2], "-", ":")
+		endTime := strings.ReplaceAll(params[3], "-", ":")
+
+		if err := h.reminderService.SetReminderTimeWindow(ctx, userID, startTime, endTime); err != nil {
+			msg := newPlainMessage(cb.Message.Chat.ID, msgInternalError)
+			return h.send(msg)
+		}
+
+		confirmText := fmt.Sprintf("⏰ Время: %s - %s", startTime[:5], endTime[:5])
+		return h.confirmSettingAndShowReminderSettings(ctx, cb, confirmText)
+
+	case "freq":
+		if len(params) < 3 {
+			h.logger.Warn("invalid frequency params", zap.Strings("params", params))
+			return nil
+		}
+
+		interval, err := formatIntervalHoursString(params[2])
+		if err != nil {
+			msg := newPlainMessage(cb.Message.Chat.ID, msgInvalidIntervalHours)
+			return h.send(msg)
+		}
+
+		if err := h.reminderService.SetReminderIntervalHours(ctx, userID, interval); err != nil {
+			msg := newPlainMessage(cb.Message.Chat.ID, msgInternalError)
+			return h.send(msg)
+		}
+
+		confirmText := fmt.Sprintf("📅 Частота: %s", formatIntervalHoursInt(interval))
+		return h.confirmSettingAndShowReminderSettings(ctx, cb, confirmText)
+
+	default:
+		h.logger.Warn("unknown reminder sub-action", zap.String("value", value), zap.Strings("params", params))
+		return nil
+	}
+}
+
+// showFrequencyMenu displays frequency selection menu
+func (h *Handler) showFrequencyMenu(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	text := "📅 " + bold("Как часто отправлять напоминания?") + "\n\n" +
+		md("Выберите частоту напоминаний в день:")
+
+	keyboard := buildFrequencyKeyboard()
+
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ReplyMarkup = &keyboard
+	return h.send(edit)
+}
+
+// showTimeWindowMenu displays time window selection menu
+func (h *Handler) showTimeWindowMenu(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	text := "⏰ " + bold("В какое время отправлять напоминания?") + "\n\n" +
+		md("Выберите временной диапазон для напоминаний:")
+
+	keyboard := buildTimeWindowKeyboard()
+
+	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
+	edit.ReplyMarkup = &keyboard
+	return h.send(edit)
+}
+
 // confirmSettingAndShowMenu shows confirmation and returns to settings menu.
 func (h *Handler) confirmSettingAndShowMenu(ctx context.Context, cb *tgbotapi.CallbackQuery, confirmText string) error {
 	confirm := tgbotapi.NewCallback(cb.ID, confirmText)
@@ -275,6 +456,16 @@ func (h *Handler) confirmSettingAndShowMenu(ctx context.Context, cb *tgbotapi.Ca
 		h.logger.Error("failed to send confirmation", zap.Error(err))
 	}
 	return h.showSettingsMenu(ctx, cb)
+}
+
+// confirmSettingAndShowReminderSettings shows confirmation and returns to reminder settings
+func (h *Handler) confirmSettingAndShowReminderSettings(ctx context.Context, cb *tgbotapi.CallbackQuery, confirmText string) error {
+	confirm := tgbotapi.NewCallback(cb.ID, confirmText)
+	if _, err := h.bot.Request(confirm); err != nil {
+		h.logger.Error("failed to send confirmation", zap.Error(err))
+	}
+
+	return h.showReminderSettings(ctx, cb)
 }
 
 // handleQuizCallback handles quiz-related callbacks.

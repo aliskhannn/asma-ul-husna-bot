@@ -12,6 +12,7 @@ const (
 	actionSettings = "settings"
 	actionQuiz     = "quiz"
 	actionProgress = "progress"
+	actionReminder = "reminder"
 )
 
 // Settings sub-actions.
@@ -19,6 +20,16 @@ const (
 	settingsMenu        = "menu"
 	settingsNamesPerDay = "names_per_day"
 	settingsQuizMode    = "quiz_mode"
+	settingsReminders   = "reminders"
+)
+
+// Reminder sub-actions.
+const (
+	reminderToggle    = "toggle"
+	reminderSetTime   = "set_time"
+	reminderStartQuiz = "start_quiz"
+	reminderSnooze    = "snooze"
+	reminderDisable   = "disable"
 )
 
 // Quiz sub-actions.
@@ -104,4 +115,33 @@ func buildQuizStartCallback() string {
 
 func buildProgressCallback() string {
 	return actionProgress
+}
+
+func buildReminderToggleCallback() string {
+	return buildSettingsCallback(settingsReminders, reminderToggle)
+}
+
+func buildReminderSetTimeCallback(hour string) string {
+	return buildSettingsCallback(settingsReminders, reminderSetTime, hour)
+}
+
+func buildReminderStartQuizCallback() string {
+	return callbackData{
+		Action: actionReminder,
+		Params: []string{reminderStartQuiz},
+	}.encode()
+}
+
+func buildReminderSnoozeCallback() string {
+	return callbackData{
+		Action: actionReminder,
+		Params: []string{reminderSnooze},
+	}.encode()
+}
+
+func buildReminderDisableCallback() string {
+	return callbackData{
+		Action: actionReminder,
+		Params: []string{reminderDisable},
+	}.encode()
 }
