@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS quiz_sessions
     current_question_num smallint NOT NULL,
     correct_answers smallint DEFAULT 0,
     total_questions smallint NOT NULL,
-    quiz_mode varchar(20), -- "daily", "review", "custom"
+    quiz_mode varchar(20), -- "new", "review", "mixed"
     session_status varchar(15) DEFAULT 'active',-- "active", "completed", "abandoned"
     started_at timestamptz DEFAULT NOW(),
     completed_at timestamptz DEFAULT NULL,

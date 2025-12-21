@@ -10,14 +10,17 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
+// QuizRepository provides access to quiz session and answer data in the database.
 type QuizRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewQuizRepository creates a new QuizRepository with the provided database pool.
 func NewQuizRepository(db *pgxpool.Pool) *QuizRepository {
 	return &QuizRepository{db: db}
 }
 
+// Create inserts a new quiz session into the database and returns its ID.
 func (r *QuizRepository) Create(ctx context.Context, s *entities.QuizSession) (int64, error) {
 	query := `
         INSERT INTO quiz_sessions (
@@ -52,6 +55,7 @@ func (r *QuizRepository) Create(ctx context.Context, s *entities.QuizSession) (i
 	return id, nil
 }
 
+// GetByID retrieves a quiz session by its ID from the database.
 func (r *QuizRepository) GetByID(ctx context.Context, id int64) (*entities.QuizSession, error) {
 	query := `
         SELECT id, user_id, current_question_num, correct_answers,
@@ -80,6 +84,7 @@ func (r *QuizRepository) GetByID(ctx context.Context, id int64) (*entities.QuizS
 	return &s, nil
 }
 
+// Update updates an existing quiz session in the database.
 func (r *QuizRepository) Update(ctx context.Context, s *entities.QuizSession) error {
 	query := `
         UPDATE quiz_sessions
@@ -104,6 +109,7 @@ func (r *QuizRepository) Update(ctx context.Context, s *entities.QuizSession) er
 	return nil
 }
 
+// SaveAnswer inserts a new quiz answer into the database and sets its ID.
 func (r *QuizRepository) SaveAnswer(ctx context.Context, a *entities.QuizAnswer) error {
 	query := `
         INSERT INTO quiz_answers (

@@ -13,8 +13,10 @@ import (
 
 var ErrNoQuestionsAvailable = errors.New("no questions available")
 
+// questionTypes contains possible types of quiz questions.
 var questionTypes = []string{"translation", "transliteration", "meaning", "arabic"}
 
+// Constants for quiz limits.
 const (
 	maxDueReviews = 20
 	maxNewNames   = 5
@@ -22,6 +24,7 @@ const (
 	maxNew        = 10
 )
 
+// QuizService provides business logic for quiz generation and management.
 type QuizService struct {
 	nameRepo     NameRepository
 	progressRepo ProgressRepository
@@ -29,6 +32,7 @@ type QuizService struct {
 	settingsRepo SettingsRepository
 }
 
+// NewQuizService creates a new QuizService with the provided repositories.
 func NewQuizService(
 	nameRepo NameRepository,
 	progressRepo ProgressRepository,
@@ -43,6 +47,7 @@ func NewQuizService(
 	}
 }
 
+// GenerateQuiz creates a new quiz session and a set of questions based on the user's settings and quiz mode.
 func (s *QuizService) GenerateQuiz(
 	ctx context.Context, userID int64, mode string,
 ) (*entities.QuizSession, []entities.Question, error) {
@@ -58,8 +63,8 @@ func (s *QuizService) GenerateQuiz(
 	var nameNumbers []int
 
 	switch mode {
-	case "daily", "mixed":
-		// 1. First, we take repetitions (priority!).
+	case "mixed":
+		// First, get repetitions (priority).
 		nameNumbers, err = s.getDailyQuizNames(ctx, userID)
 		if err != nil {
 			return nil, nil, err
@@ -73,7 +78,7 @@ func (s *QuizService) GenerateQuiz(
 		}
 
 	case "new":
-		// New only.
+		// New names only.
 		nameNumbers, err = s.getNewQuizNames(ctx, userID)
 		if err != nil {
 			return nil, nil, err
@@ -105,10 +110,12 @@ func (s *QuizService) GenerateQuiz(
 	return session, questions, nil
 }
 
+// GetSession retrieves an existing quiz session by its ID.
 func (s *QuizService) GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error) {
 	return s.quizRepo.GetByID(ctx, sessionID)
 }
 
+// CheckAndSaveAnswer checks a user's answer, saves it, and updates progress.
 func (s *QuizService) CheckAndSaveAnswer(
 	ctx context.Context,
 	userID int64,
@@ -153,6 +160,7 @@ func (s *QuizService) CheckAndSaveAnswer(
 	return qa, nil
 }
 
+// getDailyQuizNames retrieves names for a daily quiz, prioritizing due reviews.
 func (s *QuizService) getDailyQuizNames(ctx context.Context, userID int64) ([]int, error) {
 	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, maxDueReviews)
 	if err != nil {
@@ -181,6 +189,7 @@ func (s *QuizService) getDailyQuizNames(ctx context.Context, userID int64) ([]in
 	return nameNumbers, nil
 }
 
+// getReviewQuizNames retrieves names for a review-only quiz.
 func (s *QuizService) getReviewQuizNames(ctx context.Context, userID int64, settings *entities.UserSettings) ([]int, error) {
 	reviewLimit := settings.MaxReviewsPerDay
 	if reviewLimit == 0 || reviewLimit > maxReviews {
@@ -195,6 +204,7 @@ func (s *QuizService) getReviewQuizNames(ctx context.Context, userID int64, sett
 	return dueNames, nil
 }
 
+// getNewQuizNames retrieves names for a new-only quiz.
 func (s *QuizService) getNewQuizNames(ctx context.Context, userID int64) ([]int, error) {
 	newNames, err := s.progressRepo.GetNewNames(ctx, userID, maxNew)
 	if err != nil {
@@ -204,6 +214,7 @@ func (s *QuizService) getNewQuizNames(ctx context.Context, userID int64) ([]int,
 	return newNames, nil
 }
 
+// generateQuestions generates a set of quiz questions for the given name numbers.
 func (s *QuizService) generateQuestions(
 	ctx context.Context, nameNumbers []int, settings *entities.UserSettings,
 ) ([]entities.Question, error) {
@@ -246,10 +257,12 @@ func (s *QuizService) generateQuestions(
 	return questions, nil
 }
 
+// randomQuestionType selects a random question type based on settings.
 func (s *QuizService) randomQuestionType(_ *entities.UserSettings) string {
 	return questionTypes[rand.Intn(len(questionTypes))]
 }
 
+// getRandomDistractors returns a random set of distractor names.
 func (s *QuizService) getRandomDistractors(
 	all []*entities.Name,
 	targetNumber int,
@@ -273,6 +286,7 @@ func (s *QuizService) getRandomDistractors(
 	return candidates[:count]
 }
 
+// buildOptionsWithCorrect builds a shuffled set of options with the correct answer.
 func buildOptionsWithCorrect(correct string, distractors []string) ([]string, int) {
 	options := make([]string, 0, 1+len(distractors))
 	options = append(options, correct)
@@ -293,6 +307,7 @@ func buildOptionsWithCorrect(correct string, distractors []string) ([]string, in
 	return options, correctIndex
 }
 
+// generateTranslationQuestion creates a translation quiz question.
 func (s *QuizService) generateTranslationQuestion(
 	target *entities.Name,
 	allNames []*entities.Name,
@@ -316,6 +331,7 @@ func (s *QuizService) generateTranslationQuestion(
 	}
 }
 
+// generateTransliterationQuestion creates a transliteration quiz question.
 func (s *QuizService) generateTransliterationQuestion(
 	target *entities.Name,
 	allNames []*entities.Name,
@@ -339,6 +355,7 @@ func (s *QuizService) generateTransliterationQuestion(
 	}
 }
 
+// generateMeaningQuestion creates a meaning quiz question.
 func (s *QuizService) generateMeaningQuestion(
 	target *entities.Name,
 	allNames []*entities.Name,
@@ -367,6 +384,7 @@ func (s *QuizService) generateMeaningQuestion(
 	}
 }
 
+// generateArabicQuestion creates an Arabic quiz question.
 func (s *QuizService) generateArabicQuestion(
 	target *entities.Name,
 	allNames []*entities.Name,

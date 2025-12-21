@@ -14,41 +14,44 @@ import (
 
 var ErrReminderNotFound = errors.New("reminder record not found")
 
+// ReminderRepository provides access to user reminder data in the database.
 type ReminderRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewRemindersRepository creates a new ReminderRepository with the provided database pool.
 func NewRemindersRepository(db *pgxpool.Pool) *ReminderRepository {
 	return &ReminderRepository{db: db}
 }
 
+// GetDueReminders retrieves all reminders that are due to be sent at the current time.
 func (r *ReminderRepository) GetDueReminders(ctx context.Context) ([]*entities.ReminderWithUser, error) {
 	query := `
         SELECT
-    		r.user_id,
-   			r.is_enabled,
-    		r.interval_hours,
-    		r.start_time_utc,
-    		r.end_time_utc,
-    		r.last_sent_at,
-    		r.created_at,
-    		r.updated_at,
-    		u.id          AS user_id,
-    		u.chat_id     AS chat_id
-		FROM user_reminders r
-		JOIN users u ON u.id = r.user_id
-		WHERE r.is_enabled = true
-  			AND (
-      			r.last_sent_at IS NULL
-      			OR r.last_sent_at < (
-          			NOW() AT TIME ZONE 'UTC'
-          			- (r.interval_hours || ' hours')::interval
-      			)
-  			)
-  			AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'UTC') BETWEEN
-      			EXTRACT(HOUR FROM r.start_time_utc) AND
-      			EXTRACT(HOUR FROM r.end_time_utc)
-		ORDER BY r.user_id;
+           r.user_id,
+          r.is_enabled,
+           r.interval_hours,
+           r.start_time_utc,
+           r.end_time_utc,
+           r.last_sent_at,
+           r.created_at,
+           r.updated_at,
+           u.id          AS user_id,
+           u.chat_id     AS chat_id
+       FROM user_reminders r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.is_enabled = true
+          AND (
+              r.last_sent_at IS NULL
+              OR r.last_sent_at < (
+                  NOW() AT TIME ZONE 'UTC'
+                  - (r.interval_hours || ' hours')::interval
+              )
+          )
+          AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'UTC') BETWEEN
+              EXTRACT(HOUR FROM r.start_time_utc) AND
+              EXTRACT(HOUR FROM r.end_time_utc)
+       ORDER BY r.user_id;
     `
 
 	rows, err := r.db.Query(ctx, query)
@@ -84,13 +87,14 @@ func (r *ReminderRepository) GetDueReminders(ctx context.Context) ([]*entities.R
 	return res, nil
 }
 
+// MarkAsSent updates the last_sent_at field for a user's reminder to the given timestamp.
 func (r *ReminderRepository) MarkAsSent(ctx context.Context, userID int64, sentAt time.Time) error {
 	query := `
-		UPDATE user_reminders
-		SET last_sent_at = $2,
-		    updated_at = NOW()
-		WHERE user_id = $1
-	`
+       UPDATE user_reminders
+       SET last_sent_at = $2,
+           updated_at = NOW()
+       WHERE user_id = $1
+    `
 
 	cmdTag, err := r.db.Exec(ctx, query, userID, sentAt)
 	if err != nil {
@@ -104,6 +108,8 @@ func (r *ReminderRepository) MarkAsSent(ctx context.Context, userID int64, sentA
 	return nil
 }
 
+// GetByUserID retrieves a reminder record for a specific user.
+// Returns nil if no record is found.
 func (r *ReminderRepository) GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error) {
 	query := `
         SELECT user_id, is_enabled, interval_hours, start_time_utc, 
@@ -133,6 +139,7 @@ func (r *ReminderRepository) GetByUserID(ctx context.Context, userID int64) (*en
 	return &rem, nil
 }
 
+// Upsert creates or updates a reminder record for a user.
 func (r *ReminderRepository) Upsert(ctx context.Context, rem *entities.UserReminders) error {
 	query := `
         INSERT INTO user_reminders

@@ -1,3 +1,5 @@
+// render.go contains functions for rendering Telegram messages and keyboards.
+
 package telegram
 
 import (
@@ -7,7 +9,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// RenderProgress renders progress message with optional keyboard.
+// RenderProgress renders a progress message with an optional keyboard.
 func (h *Handler) RenderProgress(ctx context.Context, userID int64, withKeyboard bool) (string, *tgbotapi.InlineKeyboardMarkup, error) {
 	settings, err := h.settingsService.GetOrCreate(ctx, userID)
 	if err != nil {
@@ -42,7 +44,7 @@ func (h *Handler) RenderProgress(ctx context.Context, userID int64, withKeyboard
 	return text, keyboard, nil
 }
 
-// RenderSettings renders settings message with keyboard.
+// RenderSettings renders a settings message with a keyboard.
 func (h *Handler) RenderSettings(ctx context.Context, userID int64) (string, tgbotapi.InlineKeyboardMarkup, error) {
 	settings, err := h.settingsService.GetOrCreate(ctx, userID)
 	if err != nil {

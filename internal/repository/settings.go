@@ -13,10 +13,12 @@ import (
 
 var ErrSettingsNotFound = errors.New("settings not found")
 
+// SettingsRepository provides access to user settings data in the database.
 type SettingsRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewSettingsRepository creates a new SettingsRepository with the provided database pool.
 func NewSettingsRepository(db *pgxpool.Pool) *SettingsRepository {
 	return &SettingsRepository{db: db}
 }

@@ -14,15 +14,17 @@ import (
 
 var ErrProgressNotFound = errors.New("progress not found")
 
+// ProgressRepository provides access to user progress data in the database.
 type ProgressRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewProgressRepository creates a new ProgressRepository with the provided database pool.
 func NewProgressRepository(db *pgxpool.Pool) *ProgressRepository {
 	return &ProgressRepository{db: db}
 }
 
-// Upsert creates or updates a progress record.
+// Upsert creates or updates a progress record for a user and name.
 func (r *ProgressRepository) Upsert(ctx context.Context, progress *entities.UserProgress) error {
 	query := `
 		INSERT INTO user_progress (
@@ -215,26 +217,6 @@ func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID in
 	return nameNumbers, nil
 }
 
-// IncrementCorrectCount increments the correct answer counter.
-func (r *ProgressRepository) IncrementCorrectCount(ctx context.Context, userID int64, nameNumber int) error {
-	query := `
-        UPDATE user_progress 
-        SET correct_count = correct_count + 1
-        WHERE user_id = $1 AND name_number = $2
-    `
-
-	cmdTag, err := r.db.Exec(ctx, query, userID, nameNumber)
-	if err != nil {
-		return fmt.Errorf("increment correct count: %w", err)
-	}
-
-	if cmdTag.RowsAffected() == 0 {
-		return ErrProgressNotFound
-	}
-
-	return nil
-}
-
 // GetNewNames returns name numbers that haven't been learned yet.
 // Used for generating "new only" quizzes.
 func (r *ProgressRepository) GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error) {
@@ -270,54 +252,6 @@ func (r *ProgressRepository) GetNewNames(ctx context.Context, userID int64, limi
 	}
 
 	return nameNumbers, nil
-}
-
-// GetInProgressNames returns names that are viewed but not yet learned.
-func (r *ProgressRepository) GetInProgressNames(ctx context.Context, userID int64) ([]int, error) {
-	query := `
-        SELECT name_number 
-        FROM user_progress 
-        WHERE user_id = $1 AND is_learned = false
-        ORDER BY name_number
-    `
-
-	rows, err := r.db.Query(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get in progress names: %w", err)
-	}
-	defer rows.Close()
-
-	nameNumbers := make([]int, 0)
-	for rows.Next() {
-		var num int
-		if err := rows.Scan(&num); err != nil {
-			return nil, fmt.Errorf("scan in progress name: %w", err)
-		}
-		nameNumbers = append(nameNumbers, num)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate in progress names: %w", err)
-	}
-
-	return nameNumbers, nil
-}
-
-// CountInProgress returns the count of names in progress (viewed but not learned).
-func (r *ProgressRepository) CountInProgress(ctx context.Context, userID int64) (int, error) {
-	query := `
-        SELECT COUNT(*) 
-        FROM user_progress 
-        WHERE user_id = $1 AND is_learned = false
-    `
-
-	var count int
-	err := r.db.QueryRow(ctx, query, userID).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count in progress: %w", err)
-	}
-
-	return count, nil
 }
 
 // ProgressStats contains user progress statistics for /progress command.
@@ -379,26 +313,8 @@ func (r *ProgressRepository) GetStats(ctx context.Context, userID int64) (*Progr
 	return &stats, nil
 }
 
-// GetLastActivityDate returns the date of last review activity.
-func (r *ProgressRepository) GetLastActivityDate(ctx context.Context, userID int64) (*time.Time, error) {
-	query := `
-        SELECT MAX(last_reviewed_at) 
-        FROM user_progress 
-        WHERE user_id = $1 AND last_reviewed_at IS NOT NULL
-    `
-
-	var lastActivity *time.Time
-	err := r.db.QueryRow(ctx, query, userID).Scan(&lastActivity)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get last activity date: %w", err)
-	}
-
-	return lastActivity, nil
-}
-
+// GetNextDueName retrieves the next name due for review for a user.
+// Returns 0 if no names are due.
 func (r *ProgressRepository) GetNextDueName(ctx context.Context, userID int64) (int, error) {
 	query := `
         SELECT name_number
@@ -423,6 +339,8 @@ func (r *ProgressRepository) GetNextDueName(ctx context.Context, userID int64) (
 	return nameNumber, nil
 }
 
+// GetOrCreateDailyName retrieves or creates a daily name for a user.
+// If no daily name exists for the date, assigns a new one.
 func (r *ProgressRepository) GetOrCreateDailyName(
 	ctx context.Context,
 	userID int64,
@@ -526,6 +444,8 @@ func (r *ProgressRepository) GetOrCreateDailyName(
 	return newNumbers[0], nil
 }
 
+// GetNextDailyName retrieves the next daily name for review for a user on a specific date.
+// Returns 0 if no daily names are available.
 func (r *ProgressRepository) GetNextDailyName(
 	ctx context.Context,
 	userID int64,
@@ -557,6 +477,8 @@ func (r *ProgressRepository) GetNextDailyName(
 	return nameNumber, nil
 }
 
+// GetRandomLearnedName retrieves a random learned name for a user.
+// Returns 0 if no names are learned.
 func (r *ProgressRepository) GetRandomLearnedName(ctx context.Context, userID int64) (int, error) {
 	query := `
         SELECT name_number

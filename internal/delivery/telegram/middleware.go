@@ -1,3 +1,5 @@
+// middleware.go contains middleware functions for error handling.
+
 package telegram
 
 import (
@@ -7,8 +9,10 @@ import (
 	"go.uber.org/zap"
 )
 
+// HandlerFunc is a function type for message handlers.
 type HandlerFunc func(ctx context.Context, chatID int64) error
 
+// withErrorHandling wraps a handler function with error handling.
 func (h *Handler) withErrorHandling(fn HandlerFunc) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		if err := fn(ctx, chatID); err != nil {
@@ -23,8 +27,10 @@ func (h *Handler) withErrorHandling(fn HandlerFunc) HandlerFunc {
 	}
 }
 
+// CallbackHandlerFunc is a function type for callback handlers.
 type CallbackHandlerFunc func(ctx context.Context, cb *tgbotapi.CallbackQuery) error
 
+// withCallbackErrorHandling wraps a callback handler with error handling.
 func (h *Handler) withCallbackErrorHandling(fn CallbackHandlerFunc) func(ctx context.Context, cb *tgbotapi.CallbackQuery) {
 	return func(ctx context.Context, cb *tgbotapi.CallbackQuery) {
 		if err := fn(ctx, cb); err != nil {

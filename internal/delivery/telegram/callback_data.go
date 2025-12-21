@@ -1,3 +1,5 @@
+// callback_data.go defines constants and functions for structured callback data.
+
 package telegram
 
 import (
@@ -26,7 +28,6 @@ const (
 // Reminder sub-actions.
 const (
 	reminderToggle    = "toggle"
-	reminderSetTime   = "set_time"
 	reminderStartQuiz = "start_quiz"
 	reminderSnooze    = "snooze"
 	reminderDisable   = "disable"
@@ -44,7 +45,7 @@ type callbackData struct {
 	Raw    string
 }
 
-// Encode creates callback string.
+// encode creates callback string.
 func (cd callbackData) encode() string {
 	if len(cd.Params) == 0 {
 		return cd.Action
@@ -67,7 +68,6 @@ func decodeCallback(data string) callbackData {
 }
 
 // Callback builders.
-
 func buildNameCallback(page int) string {
 	return callbackData{
 		Action: actionName,

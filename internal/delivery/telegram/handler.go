@@ -1,3 +1,5 @@
+// Package telegram provides handlers for Telegram bot updates.
+
 package telegram
 
 import (
@@ -10,6 +12,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
+// Handler is responsible for processing Telegram updates and callbacks.
 type Handler struct {
 	bot             *tgbotapi.BotAPI
 	logger          *zap.Logger
@@ -22,6 +25,7 @@ type Handler struct {
 	reminderService ReminderService
 }
 
+// NewHandler creates a new Telegram handler with dependencies.
 func NewHandler(
 	bot *tgbotapi.BotAPI,
 	logger *zap.Logger,
@@ -46,6 +50,7 @@ func NewHandler(
 	}
 }
 
+// Run starts the handler loop for processing Telegram updates.
 func (h *Handler) Run(ctx context.Context) error {
 	h.logger.Info("telegram handler started")
 	defer h.logger.Info("telegram handler stopped")
@@ -65,6 +70,7 @@ func (h *Handler) Run(ctx context.Context) error {
 	}
 }
 
+// handleUpdate processes incoming Telegram update.
 func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	if update.CallbackQuery != nil {
 		h.logger.Debug("callback received",
@@ -146,6 +152,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	_ = h.withErrorHandling(h.handleNumber(update.Message.Text, from.ID))(ctx, chatID)
 }
 
+// send sends a Telegram message and ignores "message is not modified" errors.
 func (h *Handler) send(c tgbotapi.Chattable) error {
 	_, err := h.bot.Send(c)
 	if err != nil {
@@ -157,6 +164,7 @@ func (h *Handler) send(c tgbotapi.Chattable) error {
 	return nil
 }
 
+// getCurrentQuestion retrieves the current quiz question by session and question number.
 func (h *Handler) getCurrentQuestion(sessionID int64, currentNum int) (*entities.Question, bool) {
 	questions := h.quizStorage.Get(sessionID)
 	if len(questions) == 0 {
@@ -171,6 +179,7 @@ func (h *Handler) getCurrentQuestion(sessionID int64, currentNum int) (*entities
 	return &questions[idx], true
 }
 
+// sendQuizQuestion sends a quiz question with answer buttons.
 func (h *Handler) sendQuizQuestion(
 	chatID int64,
 	session *entities.QuizSession,
@@ -186,6 +195,7 @@ func (h *Handler) sendQuizQuestion(
 	return h.send(msg)
 }
 
+// sendQuizResults sends quiz results with a keyboard.
 func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) error {
 	resultText := formatQuizResult(session)
 	keyboard := buildQuizResultKeyboard()
@@ -197,10 +207,12 @@ func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) e
 	return err
 }
 
+// storeQuizQuestions stores quiz questions in storage.
 func (h *Handler) storeQuizQuestions(sessionID int64, questions []entities.Question) {
 	h.quizStorage.Store(sessionID, questions)
 }
 
+// getQuizQuestions retrieves quiz questions from storage.
 func (h *Handler) getQuizQuestions(sessionID int64) []entities.Question {
 	return h.quizStorage.Get(sessionID)
 }

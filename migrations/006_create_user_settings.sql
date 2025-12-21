@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS user_settings
     user_id bigint PRIMARY KEY,
     names_per_day smallint DEFAULT 1 CHECK (names_per_day BETWEEN 1 AND 20),
     max_reviews_per_day SMALLINT DEFAULT 50 CHECK (max_reviews_per_day BETWEEN 10 AND 200),
-    quiz_mode varchar(20) DEFAULT 'mixed' CHECK (quiz_mode IN ('new', 'review', 'mixed', 'daily')),
+    quiz_mode varchar(20) DEFAULT 'mixed' CHECK (quiz_mode IN ('new', 'review', 'mixed')),
     language_code varchar(5) NOT NULL DEFAULT 'ru',
     created_at timestamptz DEFAULT NOW(),
     updated_at timestamptz DEFAULT NOW(),

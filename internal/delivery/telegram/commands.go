@@ -1,3 +1,5 @@
+// commands.go contains handlers for Telegram commands.
+
 package telegram
 
 import (
@@ -10,7 +12,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
-// handleNumber handles numeric input (name by number).
+// handleNumber processes numeric input and displays the corresponding name.
 func (h *Handler) handleNumber(numStr string, userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		n, err := strconv.Atoi(numStr)
@@ -47,7 +49,7 @@ func (h *Handler) handleNumber(numStr string, userID int64) HandlerFunc {
 	}
 }
 
-// handleRandom handles /random command.
+// handleRandom sends a random name.
 func (h *Handler) handleRandom(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		name, err := h.nameService.GetRandom(ctx)
@@ -75,7 +77,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 	}
 }
 
-// handleAll handles /all command.
+// handleAll sends a paginated list of all names.
 func (h *Handler) handleAll(ctx context.Context, chatID int64) error {
 	names, err := h.getAllNames(ctx)
 	if err != nil {
@@ -101,7 +103,7 @@ func (h *Handler) handleAll(ctx context.Context, chatID int64) error {
 	return h.send(msg)
 }
 
-// handleRange handles /range command.
+// handleRange sends a paginated list of names in a specified range.
 func (h *Handler) handleRange(argsStr string) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		args := strings.Fields(argsStr)
@@ -144,7 +146,7 @@ func (h *Handler) handleRange(argsStr string) HandlerFunc {
 	}
 }
 
-// handleProgress handles /progress command.
+// handleProgress displays user progress.
 func (h *Handler) handleProgress(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		text, keyboard, err := h.RenderProgress(ctx, userID, true)
@@ -162,7 +164,7 @@ func (h *Handler) handleProgress(userID int64) HandlerFunc {
 	}
 }
 
-// handleSettings handles /settings command.
+// handleSettings displays user settings.
 func (h *Handler) handleSettings(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		text, keyboard, err := h.RenderSettings(ctx, userID)
@@ -177,7 +179,7 @@ func (h *Handler) handleSettings(userID int64) HandlerFunc {
 	}
 }
 
-// quizHandler handles /quiz command.
+// handleQuiz starts a quiz for the user.
 func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)

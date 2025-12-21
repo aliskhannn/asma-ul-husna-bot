@@ -38,7 +38,7 @@ func NewReminderService(
 	}
 }
 
-// SetNotifier sets the notifier (called after handler is created)
+// SetNotifier sets the notifier (called after handler is created).
 func (s *ReminderService) SetNotifier(notifier ReminderNotifier) {
 	s.notifier = notifier
 }
@@ -262,7 +262,7 @@ func (s *ReminderService) processReminder(
 		return fmt.Errorf("build reminder stats: %w", err)
 	}
 
-	// 3. Select name by priority
+	// 3. Select name by priority.
 	name, err := s.selectNameForReminder(ctx, rwu.UserID, now, stats)
 	if err != nil {
 		return fmt.Errorf("select name for reminder: %w", err)
@@ -297,13 +297,14 @@ func (s *ReminderService) processReminder(
 	return nil
 }
 
+// selectNameForReminder selects the most relevant name for a reminder.
 func (s *ReminderService) selectNameForReminder(
 	ctx context.Context,
 	userID int64,
 	now time.Time,
 	stats *entities.ReminderStats,
 ) (*entities.Name, error) {
-	// Приоритет 1: Due-имя (SRS повтор)
+	// Priority 1: Due name (SRS repetition).
 	if stats.DueToday > 0 {
 		nameNumber, err := s.progressRepo.GetNextDueName(ctx, userID)
 		if err != nil {
@@ -321,9 +322,9 @@ func (s *ReminderService) selectNameForReminder(
 		}
 	}
 
-	// Приоритет 2: Новое имя дня (учитывая NamesPerDay)
+	// Priority 2: New daily name (considering NamesPerDay).
 	if stats.NotStarted > 0 {
-		// Получаем настройки пользователя
+		// Get user settings.
 		settings, err := s.settingsRepo.GetByUserID(ctx, userID)
 		if err != nil {
 			return nil, fmt.Errorf("get user settings: %w", err)
@@ -336,13 +337,13 @@ func (s *ReminderService) selectNameForReminder(
 
 		dateUTC := now.Truncate(24 * time.Hour)
 
-		// Сначала пробуем получить следующее имя из уже созданного "плана дня"
+		// Try to get the next name from the daily plan.
 		nameNumber, err := s.progressRepo.GetNextDailyName(ctx, userID, dateUTC)
 		if err != nil {
 			return nil, fmt.Errorf("get next daily name: %w", err)
 		}
 
-		// Если нет следующего — создаём/получаем план на день
+		// If no next name, create or get the daily plan.
 		if nameNumber == 0 {
 			nameNumber, err = s.progressRepo.GetOrCreateDailyName(ctx, userID, dateUTC, namesPerDay)
 			if err != nil {
@@ -363,7 +364,7 @@ func (s *ReminderService) selectNameForReminder(
 		}
 	}
 
-	// Приоритет 3: Случайное для закрепления
+	// Priority 3: Random learned name for reinforcement.
 	nameNumber, err := s.progressRepo.GetRandomLearnedName(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get random learned name: %w", err)
@@ -383,7 +384,7 @@ func (s *ReminderService) selectNameForReminder(
 	return nil, nil
 }
 
-// buildReminderStats collects statistics for reminder message.
+// buildReminderStats collects statistics for the reminder message.
 func (s *ReminderService) buildReminderStats(
 	ctx context.Context,
 	rem *entities.ReminderWithUser,

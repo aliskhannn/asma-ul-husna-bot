@@ -1,3 +1,5 @@
+// callbacks.go contains handlers for callback queries.
+
 package telegram
 
 import (
@@ -49,6 +51,7 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	}
 }
 
+// handleNameCallback handles pagination for names list.
 func (h *Handler) handleNameCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	if cb.Message == nil {
 		return nil
@@ -173,12 +176,10 @@ func (h *Handler) handleSettingsCallback(ctx context.Context, cb *tgbotapi.Callb
 
 	subAction := data.Params[0]
 
-	// Menu navigation (no value).
 	if len(data.Params) == 1 {
 		return h.handleSettingsNavigation(ctx, cb, subAction)
 	}
 
-	// Apply setting value.
 	value := data.Params[1]
 
 	if subAction == settingsReminders {
@@ -310,23 +311,19 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 
 	switch action {
 	case reminderStartQuiz:
-		// Отвечаем на callback
 		answer := tgbotapi.NewCallback(cb.ID, "Запускаю квиз...")
 		if _, err := h.bot.Request(answer); err != nil {
 			h.logger.Error("failed to answer callback", zap.Error(err))
 		}
 
-		// Удаляем сообщение с напоминанием
 		deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
 		if _, err := h.bot.Request(deleteMsg); err != nil {
 			h.logger.Error("failed to delete message", zap.Error(err))
 		}
 
-		// Запускаем квиз
 		return h.handleQuiz(userID)(ctx, chatID)
 
 	case reminderSnooze:
-		// Откладываем на 1 час
 		if err := h.reminderService.SnoozeReminder(ctx, userID, time.Hour); err != nil {
 			return err
 		}
@@ -336,7 +333,6 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 			h.logger.Error("failed to answer callback", zap.Error(err))
 		}
 
-		// Удаляем сообщение
 		deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
 		if _, err := h.bot.Request(deleteMsg); err != nil {
 			h.logger.Error("failed to delete message", zap.Error(err))
@@ -345,7 +341,6 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 		return nil
 
 	case reminderDisable:
-		// Выключаем напоминания
 		if err := h.reminderService.DisableReminder(ctx, userID); err != nil {
 			return err
 		}
@@ -355,7 +350,6 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 			h.logger.Error("failed to answer callback", zap.Error(err))
 		}
 
-		// Удаляем сообщение
 		deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
 		if _, err := h.bot.Request(deleteMsg); err != nil {
 			h.logger.Error("failed to delete message", zap.Error(err))
@@ -426,7 +420,7 @@ func (h *Handler) applyReminderSetting(ctx context.Context, cb *tgbotapi.Callbac
 }
 
 // showFrequencyMenu displays frequency selection menu
-func (h *Handler) showFrequencyMenu(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+func (h *Handler) showFrequencyMenu(_ context.Context, cb *tgbotapi.CallbackQuery) error {
 	text := "📅 " + bold("Как часто отправлять напоминания?") + "\n\n" +
 		md("Выберите частоту напоминаний в день:")
 
@@ -438,7 +432,7 @@ func (h *Handler) showFrequencyMenu(ctx context.Context, cb *tgbotapi.CallbackQu
 }
 
 // showTimeWindowMenu displays time window selection menu
-func (h *Handler) showTimeWindowMenu(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+func (h *Handler) showTimeWindowMenu(_ context.Context, cb *tgbotapi.CallbackQuery) error {
 	text := "⏰ " + bold("В какое время отправлять напоминания?") + "\n\n" +
 		md("Выберите временной диапазон для напоминаний:")
 

@@ -1,5 +1,5 @@
 env: "local"
-names_json_path: "assets/asma-ul-husna-ru.json"
+names_json_path: "assets/data/names.json"
 
 database:
   max_connections: 20

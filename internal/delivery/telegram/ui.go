@@ -1,3 +1,5 @@
+// ui.go contains functions for building UI elements like keyboards.
+
 package telegram
 
 import (
@@ -115,9 +117,6 @@ func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("🎲 Смешанный режим", buildSettingsCallback(settingsQuizMode, "mixed")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📅 Ежедневный", buildSettingsCallback(settingsQuizMode, "daily")),
-		),
-		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
 		),
 	)
@@ -136,7 +135,6 @@ func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKey
 		),
 	}
 
-	// Если напоминания включены, показываем настройки
 	if reminder.IsEnabled {
 		rows = append(rows,
 			tgbotapi.NewInlineKeyboardRow(

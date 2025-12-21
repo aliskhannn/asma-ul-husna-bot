@@ -1,3 +1,5 @@
+// messages.go contains message templates and formatting functions for Telegram.
+
 package telegram
 
 import (
@@ -127,21 +129,16 @@ func WelcomeMarkdownV2() string {
 
 // formatNameMessage formats a single name message (MarkdownV2 safe).
 func formatNameMessage(name *entities.Name) string {
-	// Everything coming from DB/service must be escaped.
-	// Markup is added around escaped text. [page:0]
 	return fmt.Sprintf(
 		"%s%s%s %s\n\n%s %s\n%s %s\n\n%s %s",
 		lrm,
 		md(fmt.Sprintf("%d", name.Number)),
 		md("."),
 		bold(name.ArabicName),
-
 		md("Транслитерация:"),
 		bold(name.Transliteration),
-
 		md("Перевод:"),
 		bold(name.Translation),
-
 		md("Значение:"),
 		bold(name.Meaning),
 	)
@@ -310,8 +307,6 @@ func formatQuizMode(mode string) string {
 		return "🔄 Только повторение"
 	case "mixed":
 		return "🎲 Смешанный режим"
-	case "daily":
-		return "📅 Ежедневный"
 	default:
 		return mode
 	}
@@ -405,6 +400,7 @@ func buildReminderSettingsMessage(reminder *entities.UserReminders) string {
 	)
 }
 
+// formatIntervalHoursInt formats interval hours for display.
 func formatIntervalHoursInt(freq int) string {
 	switch freq {
 	case 1:
@@ -420,6 +416,7 @@ func formatIntervalHoursInt(freq int) string {
 	}
 }
 
+// formatIntervalHoursString converts interval string to integer.
 func formatIntervalHoursString(freq string) (int, error) {
 	switch freq {
 	case "every_1h":
@@ -449,6 +446,7 @@ func formatReminderStatus(reminder *entities.UserReminders) string {
 	return fmt.Sprintf("🔔 %s в день (%s-%s)", freqText, startTime, endTime)
 }
 
+// buildReminderNotification builds reminder notification message.
 func buildReminderNotification(payload entities.ReminderPayload) string {
 	var sb strings.Builder
 
