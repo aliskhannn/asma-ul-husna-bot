@@ -1,8 +1,8 @@
 # Stage 1: Goose builder
 FROM golang:1.25-alpine AS goose-builder
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,id=goose-mod,target=/go/pkg/mod \
+    --mount=type=cache,id=goose-build,target=/root/.cache/go-build \
     go install github.com/pressly/goose/v3/cmd/goose@latest
 
 # Stage 2: Application builder
@@ -12,7 +12,7 @@ WORKDIR /app
 
 COPY go.mod go.sum ./
 
-RUN --mount=type=cache,target=/go/pkg/mod \
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
     go mod download && go mod verify
 
 COPY . .
