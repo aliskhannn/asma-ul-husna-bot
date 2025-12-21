@@ -30,7 +30,28 @@ const (
 	msgNoReviews            = "Повторений на сегодня нет — все имена пока не требуют повторения.\nПопробуйте режим «Смешанный» или зайдите позже."
 	msgNoNewNames           = "Новых имён больше нет — вы прошли все 99 имён.\nПереключитесь на «Повторение» или «Смешанный», чтобы закреплять."
 	msgInternalError        = "Что‑то пошло не так. Попробуйте позже."
-	msgUnknownCommand       = "Неизвестная команда. Список доступных команд:\n\n/all — посмотреть все имена\n/random — получить случайное имя\n/range N M — посмотреть имена с N по M"
+	msgUnknownCommand       = "Неизвестная команда. Список доступных команд:\n\n" +
+		"/start — начать работу с ботом\n" +
+		"/all — посмотреть все имена\n" +
+		"/random — получить случайное имя\n" +
+		"/range N M — посмотреть имена с N по M\n" +
+		"/progress — показать прогресс изучения\n" +
+		"/quiz — начать квиз\n" +
+		"/settings — настройки бота\n" +
+		"/help — помощь и список команд"
+)
+
+const (
+	helpTMessage = "Добро пожаловать! Вот список команд:\n\n" +
+		"/start — начать работу с ботом\n" +
+		"/all — посмотреть все 99 имён\n" +
+		"/random — получить случайное имя\n" +
+		"/range N M — посмотреть имена с N по M\n" +
+		"/progress — показать прогресс изучения\n" +
+		"/quiz — начать квиз\n" +
+		"/settings — настройки бота\n" +
+		"/help — помощь и список команд\n\n" +
+		"Также вы можете просто отправить номер имени (например, 2), чтобы получить информацию об этом имени."
 )
 
 const (
@@ -108,18 +129,21 @@ func WelcomeMarkdownV2() string {
 	sb.WriteString(md("Чтобы начать:"))
 	sb.WriteString("\n\n")
 
-	// EscapeText will escape dots in "1." etc. automatically. [page:0]
-	sb.WriteString(md("1. Введите 1 для просмотра первого имени."))
+	sb.WriteString(md("1. Введите номер имени (например, 1) для просмотра конкретного имени."))
 	sb.WriteString("\n")
-	sb.WriteString(md("2. Используйте /random чтобы получить рандомное имя."))
+	sb.WriteString(md("2. Используйте /random чтобы получить случайное имя."))
 	sb.WriteString("\n")
 	sb.WriteString(md("3. Нажмите /all для просмотра всех имён."))
 	sb.WriteString("\n")
 	sb.WriteString(md("4. Используйте /range N M для просмотра имён с N по M."))
 	sb.WriteString("\n")
-	sb.WriteString(md("5. Нажмите /settings для выбора языка и настройки напоминаний."))
+	sb.WriteString(md("5. Нажмите /progress для просмотра прогресса."))
 	sb.WriteString("\n")
-	sb.WriteString(md("6. Нажмите /help для получения помощи."))
+	sb.WriteString(md("6. Нажмите /quiz чтобы начать квиз."))
+	sb.WriteString("\n")
+	sb.WriteString(md("7. Нажмите /settings для настройки квиза и напоминаний."))
+	sb.WriteString("\n")
+	sb.WriteString(md("8. Нажмите /help для получения помощи."))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(md("Начните свой путь к знанию прямо сейчас!"))

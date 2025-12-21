@@ -105,12 +105,11 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	chatID := update.Message.Chat.ID
-	msg := newMessage(chatID, "")
 
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
-			msg.Text = WelcomeMarkdownV2()
+			msg := newMessage(chatID, WelcomeMarkdownV2())
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send start message",
 					zap.Error(err),
@@ -137,8 +136,16 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		case "settings":
 			_ = h.withErrorHandling(h.handleSettings(from.ID))(ctx, chatID)
 
+		case "help":
+			msg := newPlainMessage(chatID, helpTMessage)
+			if err := h.send(msg); err != nil {
+				h.logger.Error("failed to send help message",
+					zap.Error(err),
+				)
+			}
+
 		default:
-			msg = newPlainMessage(chatID, msgUnknownCommand)
+			msg := newPlainMessage(chatID, msgUnknownCommand)
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send unknown command message",
 					zap.Error(err),

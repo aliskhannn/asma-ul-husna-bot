@@ -46,11 +46,11 @@ func main() {
 	commands := []tgbotapi.BotCommand{
 		{
 			Command:     "start",
-			Description: "Запустить бота",
+			Description: "Начать работу с ботом",
 		},
 		{
 			Command:     "all",
-			Description: "Посмотреть все имена",
+			Description: "Показать все 99 имён",
 		},
 		{
 			Command:     "random",
@@ -58,23 +58,23 @@ func main() {
 		},
 		{
 			Command:     "range",
-			Description: "Получить имена в диапазоне (использование: /range 25 30)",
+			Description: "Получить имена в диапазоне (например, /range 25 30)",
 		},
 		{
 			Command:     "progress",
-			Description: "Показать прогресс",
+			Description: "Показать прогресс изучения",
 		},
 		{
 			Command:     "quiz",
-			Description: "Начать квиз",
+			Description: "Пройти квиз по именам",
 		},
 		{
 			Command:     "settings",
-			Description: "Настройки",
+			Description: "Настройки бота",
 		},
 		{
 			Command:     "help",
-			Description: "Помощь",
+			Description: "Помощь и список команд",
 		},
 	}
 
