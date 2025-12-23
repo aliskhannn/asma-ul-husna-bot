@@ -1,5 +1,3 @@
-// middleware.go contains middleware functions for error handling.
-
 package telegram
 
 import (

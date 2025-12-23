@@ -2,12 +2,16 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
+
+var ErrUserNotFound = errors.New("user not found")
 
 // UserRepository provides access to user data in the database.
 type UserRepository struct {
@@ -19,24 +23,26 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// SaveUser inserts a new user into the database or updates an existing one.
-// It sets IsActive and CreatedAt fields from the database.
-func (r *UserRepository) SaveUser(ctx context.Context, user *entities.User) error {
+// Save inserts a new user or updates an existing one.
+func (r *UserRepository) Save(ctx context.Context, user *entities.User) error {
 	query := `
-    INSERT INTO users (id, chat_id)
-    VALUES ($1, $2)
-    RETURNING is_active, created_at
-    `
-	err := r.db.QueryRow(ctx, query, user.ID, user.ChatID).Scan(&user.IsActive, &user.CreatedAt)
+		INSERT INTO users (id, chat_id, is_active, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO UPDATE SET
+			chat_id = EXCLUDED.chat_id,
+			is_active = EXCLUDED.is_active
+	`
+
+	_, err := r.db.Exec(ctx, query, user.ID, user.ChatID, user.IsActive, user.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to save user: %w", err)
+		return fmt.Errorf("save user: %w", err)
 	}
 
 	return nil
 }
 
-// UserExists checks if a user with the given ID exists in the database.
-func (r *UserRepository) UserExists(ctx context.Context, userID int64) (bool, error) {
+// Exists checks if a user with the given ID exists in the database.
+func (r *UserRepository) Exists(ctx context.Context, userID int64) (bool, error) {
 	query := "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)"
 
 	var exists bool
@@ -46,4 +52,30 @@ func (r *UserRepository) UserExists(ctx context.Context, userID int64) (bool, er
 	}
 
 	return exists, nil
+}
+
+// GetByID retrieves a user by ID.
+func (r *UserRepository) GetByID(ctx context.Context, userID int64) (*entities.User, error) {
+	query := `
+		SELECT id, chat_id, is_active, created_at
+		FROM users
+		WHERE id = $1
+	`
+
+	var user entities.User
+	err := r.db.QueryRow(ctx, query, userID).Scan(
+		&user.ID,
+		&user.ChatID,
+		&user.IsActive,
+		&user.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+
+	return &user, nil
 }

@@ -45,3 +45,7 @@ func (s *SettingsService) UpdateNamesPerDay(ctx context.Context, userID int64, n
 func (s *SettingsService) UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error {
 	return s.repository.UpdateQuizMode(ctx, userID, quizMode)
 }
+
+func (s *SettingsService) UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error {
+	return s.repository.UpdateLearningMode(ctx, userID, learningMode)
+}

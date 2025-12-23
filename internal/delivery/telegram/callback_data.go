@@ -1,5 +1,3 @@
-// callback_data.go defines constants and functions for structured callback data.
-
 package telegram
 
 import (
@@ -19,10 +17,11 @@ const (
 
 // Settings sub-actions.
 const (
-	settingsMenu        = "menu"
-	settingsNamesPerDay = "names_per_day"
-	settingsQuizMode    = "quiz_mode"
-	settingsReminders   = "reminders"
+	settingsMenu         = "menu"
+	settingsLearningMode = "learning_mode"
+	settingsNamesPerDay  = "names_per_day"
+	settingsQuizMode     = "quiz_mode"
+	settingsReminders    = "reminders"
 )
 
 // Reminder sub-actions.

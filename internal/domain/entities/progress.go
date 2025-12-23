@@ -20,27 +20,38 @@ const (
 	PhaseMastered Phase = "mastered" // fully memorized and reviewed
 )
 
+// SRS thresholds
+const (
+	MinStreakForLearning  = 3   // Streak to move from 'new' to 'learning'
+	MinStreakForMastery   = 7   // Streak to move to 'mastered'
+	MinIntervalForMastery = 21  // Days interval required for mastery
+	MaxIntervalDays       = 180 // Cap at 6 months
+)
+
 // UserProgress stores the learning progress of a user for a specific name.
 type UserProgress struct {
 	UserID     int64
 	NameNumber int
 
-	// SRS fields.
-	Phase        Phase      // the current learning phase
-	Ease         float64    // ease factor (1.3-2.5)
-	Streak       int        // number of consecutive correct answers
-	IntervalDays int        // current interval to next review, in days
-	NextReviewAt *time.Time // timestamp of the next review
+	// SRS fields
+	Phase        Phase
+	Ease         float64
+	Streak       int
+	IntervalDays int
+	NextReviewAt *time.Time
 
-	// Legacy fields (for backward compatibility, may be removed later).
-	IsLearned      bool
-	LastReviewedAt *time.Time // last review timestamp, can be nil
+	// Tracking fields
+	ReviewCount    int
 	CorrectCount   int
+	FirstSeenAt    *time.Time
+	IntroducedAt   *time.Time
+	LastReviewedAt *time.Time
 }
 
 // NewUserProgress creates a new UserProgress instance for a given user and name number.
 // It initializes default values for the spaced repetition fields.
 func NewUserProgress(userID int64, nameNumber int) *UserProgress {
+	now := time.Now()
 	return &UserProgress{
 		UserID:       userID,
 		NameNumber:   nameNumber,
@@ -48,76 +59,100 @@ func NewUserProgress(userID int64, nameNumber int) *UserProgress {
 		Ease:         2.5,
 		Streak:       0,
 		IntervalDays: 0,
-		IsLearned:    false,
+		ReviewCount:  0,
 		CorrectCount: 0,
+		FirstSeenAt:  &now,
 	}
 }
 
 // UpdateSRS updates the spaced repetition parameters after the user answers.
-//
-// It adjusts the user's learning progress depending on the answer quality:
-//  1. If the answer is incorrect (QualityFail) — reset streak and ease, reduce interval.
-//  2. If the answer is hard (QualityHard) — slightly reduce ease, increase interval, and check mastery.
-//  3. If the answer is good (QualityGood) — increase ease and interval, possibly mark as mastered.
-//
-// The method also updates compatibility fields for legacy data tracking.
+// It adjusts the user's learning progress based on answer quality using SM-2 algorithm.
 func (p *UserProgress) UpdateSRS(quality AnswerQuality, now time.Time) {
+	p.ReviewCount++
+	p.LastReviewedAt = &now
+
 	switch quality {
 	case QualityFail:
-		// 1. Reset progress after a failed attempt
+		// Reset streak and reduce ease
 		p.Streak = 0
 		p.Ease = max(1.3, p.Ease-0.2)
 		p.IntervalDays = 0
 
-		// 2. Schedule a short review in 10 minutes
+		// Schedule immediate review (10 minutes)
 		next := now.Add(10 * time.Minute)
 		p.NextReviewAt = &next
-		p.Phase = PhaseLearning
+
+		// Demote from mastered if applicable
+		if p.Phase == PhaseMastered {
+			p.Phase = PhaseLearning
+		}
 
 	case QualityHard:
-		// 1. Increment streak and slightly reduce ease
 		p.Streak++
-		p.Ease = max(1.3, p.Ease-0.05)
+		p.CorrectCount++
+		p.Ease = max(1.3, p.Ease-0.15)
 
-		// 2. Recalculate interval based on ease and streak
-		p.IntervalDays = calculateIntervalDays(p.Ease, p.Streak)
+		// Calculate interval with reduction factor
+		baseInterval := calculateIntervalDays(p.Ease, p.Streak)
+		p.IntervalDays = int(float64(baseInterval) * 0.7)
 
-		// 3. Reduce interval by 30% for difficult answers
-		next := now.Add(time.Duration(float64(p.IntervalDays)*0.7*24) * time.Hour)
+		next := now.Add(time.Duration(p.IntervalDays) * 24 * time.Hour)
 		p.NextReviewAt = &next
 
-		// 4. Promote to mastered phase if progress is sufficient
-		if p.Streak >= 3 && p.Phase == PhaseLearning {
-			p.Phase = PhaseMastered
-		}
+		p.updatePhase()
 
 	case QualityGood:
-		// 1. Increment streak and slightly increase ease
 		p.Streak++
-		p.Ease = min(2.5, p.Ease+0.05)
+		p.CorrectCount++
+		p.Ease = min(2.5, p.Ease+0.01)
 
-		// 2. Calculate interval for the next review
 		p.IntervalDays = calculateIntervalDays(p.Ease, p.Streak)
 
-		// 3. Schedule next review after a full interval
-		next := now.Add(time.Duration(p.IntervalDays*24) * time.Hour)
+		next := now.Add(time.Duration(p.IntervalDays) * 24 * time.Hour)
 		p.NextReviewAt = &next
 
-		// 4. Promote to mastered phase if streak is high
-		if p.Streak >= 3 {
-			p.Phase = PhaseMastered
-		}
-	}
-
-	// Update legacy fields for compatibility with older schema
-	p.LastReviewedAt = &now
-	if p.Phase == PhaseMastered {
-		p.IsLearned = true
+		p.updatePhase()
 	}
 }
 
-// calculateIntervalDays computes the review interval in days
-// based on ease factor and current streak length.
+// updatePhase transitions between learning phases based on streak and interval.
+func (p *UserProgress) updatePhase() {
+	if p.Streak >= MinStreakForMastery && p.IntervalDays >= MinIntervalForMastery {
+		p.Phase = PhaseMastered
+		return
+	}
+
+	if p.Phase == PhaseNew && (p.Streak >= MinStreakForLearning || p.ReviewCount >= 2) {
+		p.Phase = PhaseLearning
+		return
+	}
+}
+
+// MarkAsIntroduced marks a name as introduced to the user for the first time.
+func (p *UserProgress) MarkAsIntroduced(now time.Time) {
+	if p.Phase == PhaseNew && p.FirstSeenAt == nil {
+		p.FirstSeenAt = &now
+		next := now.Add(24 * time.Hour)
+		p.NextReviewAt = &next
+		p.LastReviewedAt = &now
+	}
+}
+
+// IsLearned returns true if the name is considered learned (mastered).
+func (p *UserProgress) IsLearned() bool {
+	return p.Phase == PhaseMastered
+}
+
+// Accuracy returns the percentage of correct answers.
+func (p *UserProgress) Accuracy() float64 {
+	if p.ReviewCount == 0 {
+		return 0
+	}
+	return float64(p.CorrectCount) / float64(p.ReviewCount) * 100
+}
+
+// calculateIntervalDays computes the review interval in days based on ease factor
+// and current streak length using the SM-2 algorithm.
 func calculateIntervalDays(ease float64, streak int) int {
 	if streak <= 0 {
 		return 0
@@ -128,12 +163,30 @@ func calculateIntervalDays(ease float64, streak int) int {
 	if streak == 2 {
 		return 3
 	}
-
-	// Exponential interval growth with increasing streak and ease
-	base := float64(streak) * ease
-	if base < 1 {
-		base = 1
+	if streak == 3 {
+		return 7
 	}
 
-	return int(base * 2)
+	// SM-2 formula for streak > 3.
+	base := 7.0
+	for i := 4; i <= streak; i++ {
+		base *= ease
+	}
+
+	interval := int(base)
+	if interval > MaxIntervalDays {
+		return MaxIntervalDays
+	}
+	return interval
+}
+
+// DetermineQuality determines answer quality based on correctness and attempt.
+func DetermineQuality(isCorrect bool, isFirstAttempt bool) AnswerQuality {
+	if !isCorrect {
+		return QualityFail
+	}
+	if isFirstAttempt {
+		return QualityGood
+	}
+	return QualityHard
 }

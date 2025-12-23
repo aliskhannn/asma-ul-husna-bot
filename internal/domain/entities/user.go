@@ -13,7 +13,9 @@ type User struct {
 // NewUser creates a new user with the specified Telegram ID and chat ID.
 func NewUser(id, chatID int64) *User {
 	return &User{
-		ID:     id,
-		ChatID: chatID,
+		ID:        id,
+		ChatID:    chatID,
+		IsActive:  true,
+		CreatedAt: time.Now(),
 	}
 }

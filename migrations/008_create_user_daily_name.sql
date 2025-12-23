@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS user_daily_name
     user_id     BIGINT    NOT NULL,
     date_utc    DATE      NOT NULL,
     name_number SMALLINT  NOT NULL,
-    slot_index  SMALLINT  NOT NULL DEFAULT 0,    -- ДОБАВИЛИ
+    slot_index  SMALLINT  NOT NULL DEFAULT 0,
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id, date_utc, slot_index), -- ИЗМЕНИЛИ
+    PRIMARY KEY (user_id, date_utc, slot_index),
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
@@ -18,5 +18,8 @@ CREATE INDEX idx_user_daily_name_user_date ON user_daily_name (user_id, date_utc
 
 -- +goose Down
 -- +goose StatementBegin
+DROP INDEX IF EXISTS idx_user_daily_name_date;
+DROP INDEX IF EXISTS idx_user_daily_name_user_date;
+
 DROP TABLE IF EXISTS user_daily_name;
 -- +goose StatementEnd

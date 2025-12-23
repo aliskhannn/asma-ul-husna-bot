@@ -1,5 +1,3 @@
-// ui.go contains functions for building UI elements like keyboards.
-
 package telegram
 
 import (
@@ -49,6 +47,9 @@ func buildProgressKeyboard() tgbotapi.InlineKeyboardMarkup {
 func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎯 Режим обучения", buildSettingsCallback(settingsLearningMode)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📚 Имён в день", buildSettingsCallback(settingsNamesPerDay)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -57,8 +58,25 @@ func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("⏰ Напоминания", buildSettingsCallback(settingsReminders)),
 		),
+	)
+}
+
+func buildLearningModeKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📊 Мой прогресс", buildProgressCallback()),
+			tgbotapi.NewInlineKeyboardButtonData(
+				"🎯 Управляемое (рекомендуется)",
+				buildSettingsCallback(settingsLearningMode, "guided"),
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"🆓 Свободное",
+				buildSettingsCallback(settingsLearningMode, "free"),
+			),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
 		),
 	)
 }
@@ -76,9 +94,9 @@ func buildQuizResultKeyboard() tgbotapi.InlineKeyboardMarkup {
 }
 
 // buildQuizAnswerKeyboard builds keyboard for quiz question.
-func buildQuizAnswerKeyboard(q *entities.Question, sessionID int64, questionNum int) tgbotapi.InlineKeyboardMarkup {
+func buildQuizAnswerKeyboard(sessionID int64, questionNum int, options []string) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
-	for i, option := range q.Options {
+	for i, option := range options {
 		callbackData := buildQuizAnswerCallback(sessionID, questionNum, i)
 		button := tgbotapi.NewInlineKeyboardButtonData(option, callbackData)
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(button))

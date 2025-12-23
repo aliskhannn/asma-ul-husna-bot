@@ -5,405 +5,400 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 )
 
-var ErrNoQuestionsAvailable = errors.New("no questions available")
+var ErrNoQuestionsAvailable = errors.New("no questions available for quiz")
 
 // questionTypes contains possible types of quiz questions.
-var questionTypes = []string{"translation", "transliteration", "meaning", "arabic"}
-
-// Constants for quiz limits.
-const (
-	maxDueReviews = 20
-	maxNewNames   = 5
-	maxReviews    = 30
-	maxNew        = 10
-)
+var questionTypes = []entities.QuestionType{
+	entities.QuestionTypeTranslation,
+	entities.QuestionTypeTranslation,
+	entities.QuestionTypeMeaning,
+	entities.QuestionTypeArabic,
+}
 
 // QuizService provides business logic for quiz generation and management.
 type QuizService struct {
-	nameRepo     NameRepository
-	progressRepo ProgressRepository
-	quizRepo     QuizRepository
-	settingsRepo SettingsRepository
+	db               *pgxpool.Pool
+	nameRepo         NameRepository
+	progressRepo     ProgressRepository
+	quizRepo         QuizRepository
+	settingsRepo     SettingsRepository
+	dailyNameRepo    DailyNameRepository
+	questionSelector *QuestionSelector
+	optionGenerator  *OptionGenerator
+	answerValidator  *AnswerValidator
+	logger           *zap.Logger
 }
 
 // NewQuizService creates a new QuizService with the provided repositories.
 func NewQuizService(
+	db *pgxpool.Pool,
 	nameRepo NameRepository,
 	progressRepo ProgressRepository,
 	quizRepo QuizRepository,
 	settingsRepo SettingsRepository,
+	dailyNameRepo DailyNameRepository,
+	logger *zap.Logger,
 ) *QuizService {
 	return &QuizService{
-		nameRepo:     nameRepo,
-		progressRepo: progressRepo,
-		quizRepo:     quizRepo,
-		settingsRepo: settingsRepo,
+		db: db,
+
+		nameRepo:      nameRepo,
+		progressRepo:  progressRepo,
+		quizRepo:      quizRepo,
+		settingsRepo:  settingsRepo,
+		dailyNameRepo: dailyNameRepo,
+
+		questionSelector: NewQuestionSelector(progressRepo, settingsRepo, dailyNameRepo),
+		answerValidator:  NewAnswerValidator(),
+		logger:           logger,
 	}
 }
 
-// GenerateQuiz creates a new quiz session and a set of questions based on the user's settings and quiz mode.
-func (s *QuizService) GenerateQuiz(
-	ctx context.Context, userID int64, mode string,
-) (*entities.QuizSession, []entities.Question, error) {
-	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
-	if err != nil && !errors.Is(err, repository.ErrSettingsNotFound) {
-		return nil, nil, err
+// AnswerResult contains the result of submitting an answer.
+type AnswerResult struct {
+	IsCorrect         bool
+	CorrectAnswer     string
+	NameNumber        int
+	IsSessionComplete bool
+	Score             int
+	Total             int
+	SessionID         int64
+}
+
+// StartQuizSession creates a new quiz session with questions.
+func (s *QuizService) StartQuizSession(
+	ctx context.Context, userID int64, totalQuestions int,
+) (*entities.QuizSession, []entities.Name, error) {
+	// Abandon any old active sessions
+	if err := s.quizRepo.AbandonOldSessions(ctx, userID); err != nil {
+		return nil, nil, fmt.Errorf("abandon old sessions: %w", err)
 	}
 
-	if settings == nil {
+	// Get user settings
+	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, repository.ErrSettingsNotFound) {
+			return nil, nil, fmt.Errorf("get settings: %w", err)
+		}
+		// Use defaults if settings not found
 		settings = entities.NewUserSettings(userID)
 	}
 
-	var nameNumbers []int
-
-	switch mode {
-	case "mixed":
-		// First, get repetitions (priority).
-		nameNumbers, err = s.getDailyQuizNames(ctx, userID)
-		if err != nil {
-			return nil, nil, err
-		}
-
-	case "review":
-		// Only repetitions.
-		nameNumbers, err = s.getReviewQuizNames(ctx, userID, settings)
-		if err != nil {
-			return nil, nil, err
-		}
-
-	case "new":
-		// New names only.
-		nameNumbers, err = s.getNewQuizNames(ctx, userID)
-		if err != nil {
-			return nil, nil, err
-		}
-
-	default:
-		return nil, nil, fmt.Errorf("unknown quiz mode: %s", mode)
+	// Select questions using smart algorithm
+	nameNumbers, err := s.questionSelector.SelectQuestions(ctx, userID, totalQuestions, settings.QuizMode)
+	if err != nil {
+		return nil, nil, fmt.Errorf("select questions: %w", err)
 	}
 
 	if len(nameNumbers) == 0 {
 		return nil, nil, ErrNoQuestionsAvailable
 	}
 
-	session := entities.NewQuizSession(userID, len(nameNumbers), mode)
-	id, err := s.quizRepo.Create(ctx, session)
+	// Fetch name details
+	names, err := s.nameRepo.GetByNumbers(nameNumbers)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("get names: %w", err)
 	}
-	session.ID = id
 
-	questions, err := s.generateQuestions(ctx, nameNumbers, settings)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(questions) == 0 {
+	if len(names) == 0 {
 		return nil, nil, ErrNoQuestionsAvailable
 	}
 
-	return session, questions, nil
+	// Get all names for option generation
+	allNames, err := s.nameRepo.GetAll()
+	if err != nil {
+		return nil, nil, fmt.Errorf("get all names: %w", err)
+	}
+
+	// Initialize option generator
+	optionGenerator := NewOptionGenerator(allNames)
+
+	// Start transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	// Create session
+	session := &entities.QuizSession{
+		UserID:             userID,
+		CurrentQuestionNum: 1,
+		TotalQuestions:     len(names),
+		QuizMode:           settings.QuizMode,
+		SessionStatus:      "active",
+		StartedAt:          time.Now(),
+		Version:            0,
+	}
+
+	sessionID, err := s.quizRepo.CreateWithTx(ctx, tx, session)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create session: %w", err)
+	}
+	session.ID = sessionID
+
+	// Create questions
+	for i, name := range names {
+		questionType := s.randomQuestionType()
+
+		// Generate 4 options including the correct answer
+		options, correctIndex := optionGenerator.GenerateOptions(&name, questionType)
+
+		correctAnswer := s.getCorrectAnswerByType(&name, questionType)
+
+		question := &entities.QuizQuestion{
+			SessionID:     sessionID,
+			QuestionOrder: i + 1,
+			NameNumber:    name.Number,
+			QuestionType:  string(questionType),
+			CorrectAnswer: correctAnswer,
+			Options:       options,
+			CorrectIndex:  correctIndex,
+			CreatedAt:     time.Now(),
+		}
+
+		_, err := s.quizRepo.CreateQuestionWithTx(ctx, tx, question)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create question %d: %w", i+1, err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return session, names, nil
 }
 
-// GetSession retrieves an existing quiz session by its ID.
-func (s *QuizService) GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error) {
-	return s.quizRepo.GetByID(ctx, sessionID)
-}
-
-// CheckAndSaveAnswer checks a user's answer, saves it, and updates progress.
-func (s *QuizService) CheckAndSaveAnswer(
+// SubmitAnswer processes a user's answer with race condition protection.
+func (s *QuizService) SubmitAnswer(
 	ctx context.Context,
+	sessionID int64,
 	userID int64,
-	session *entities.QuizSession,
-	q *entities.Question,
-	selectedIndex int,
-) (*entities.QuizAnswer, error) {
-	if selectedIndex < 0 || selectedIndex >= len(q.Options) {
-		return nil, fmt.Errorf("invalid selected index")
-	}
-
-	userAnswer := q.Options[selectedIndex]
-	correctAnswer := q.CorrectAnswer
-
-	qa := entities.NewQuizAnswer(userID, session.ID, q.NameNumber, q.Type)
-	qa.CheckAnswer(userAnswer, correctAnswer)
-
-	if err := s.quizRepo.SaveAnswer(ctx, qa); err != nil {
-		return nil, err
-	}
-
-	reviewedAt := time.Now()
-
-	if err := s.progressRepo.RecordReview(ctx, userID, q.NameNumber, qa.IsCorrect, reviewedAt); err != nil {
-		return nil, err
-	}
-
-	if qa.IsCorrect {
-		session.CorrectAnswers++
-	}
-	session.CurrentQuestionNum++
-	if session.CurrentQuestionNum > session.TotalQuestions {
-		session.SessionStatus = "completed"
-		now := time.Now()
-		session.CompletedAt = &now
-	}
-
-	if err := s.quizRepo.Update(ctx, session); err != nil {
-		return nil, err
-	}
-
-	return qa, nil
-}
-
-// getDailyQuizNames retrieves names for a daily quiz, prioritizing due reviews.
-func (s *QuizService) getDailyQuizNames(ctx context.Context, userID int64) ([]int, error) {
-	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, maxDueReviews)
+	selectedOption string, // The button callback data (e.g., "opt_1", "opt_2", etc.)
+) (*AnswerResult, error) {
+	// Parse selected index
+	selectedIndex, err := strconv.Atoi(selectedOption)
 	if err != nil {
-		return nil, fmt.Errorf("get names due for review: %w", err)
+		return nil, fmt.Errorf("invalid option index: %w", err)
 	}
 
-	newNamesCount := 0
-	if len(dueNames) < 5 {
-		newNamesCount = maxNewNames - len(dueNames)
-		if newNamesCount > maxNewNames {
-			newNamesCount = maxNewNames
-		}
-	}
-
-	var nameNumbers []int
-	nameNumbers = append(nameNumbers, dueNames...)
-
-	if newNamesCount > 0 {
-		newNames, err := s.progressRepo.GetNewNames(ctx, userID, newNamesCount)
-		if err != nil {
-			return nil, fmt.Errorf("get new names: %w", err)
-		}
-		nameNumbers = append(nameNumbers, newNames...)
-	}
-
-	return nameNumbers, nil
-}
-
-// getReviewQuizNames retrieves names for a review-only quiz.
-func (s *QuizService) getReviewQuizNames(ctx context.Context, userID int64, settings *entities.UserSettings) ([]int, error) {
-	reviewLimit := settings.MaxReviewsPerDay
-	if reviewLimit == 0 || reviewLimit > maxReviews {
-		reviewLimit = maxReviews
-	}
-
-	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, reviewLimit)
+	// Start transaction
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get due names: %w", err)
+		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
-	return dueNames, nil
-}
-
-// getNewQuizNames retrieves names for a new-only quiz.
-func (s *QuizService) getNewQuizNames(ctx context.Context, userID int64) ([]int, error) {
-	newNames, err := s.progressRepo.GetNewNames(ctx, userID, maxNew)
+	// Get session with lock
+	session, err := s.quizRepo.GetSessionForUpdateWithTx(ctx, tx, sessionID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get new names: %w", err)
+		return nil, fmt.Errorf("get session: %w", err)
 	}
 
-	return newNames, nil
-}
-
-// generateQuestions generates a set of quiz questions for the given name numbers.
-func (s *QuizService) generateQuestions(
-	ctx context.Context, nameNumbers []int, settings *entities.UserSettings,
-) ([]entities.Question, error) {
-	questions := make([]entities.Question, 0, len(nameNumbers))
-
-	allNames, err := s.nameRepo.GetAll(ctx)
+	// Get current question
+	currentQuestion, err := s.quizRepo.GetQuestionByOrder(ctx, session.ID, session.CurrentQuestionNum)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get current question: %w", err)
 	}
 
-	for _, num := range nameNumbers {
-		name, err := s.nameRepo.GetByNumber(ctx, num)
-		if err != nil {
-			return nil, err
-		}
+	// Validate answer by comparing indices
+	isCorrect := selectedIndex == currentQuestion.CorrectIndex
 
-		qType := s.randomQuestionType(settings)
-
-		var q entities.Question
-		switch qType {
-		case "translation":
-			q = s.generateTranslationQuestion(name, allNames)
-		case "transliteration":
-			q = s.generateTransliterationQuestion(name, allNames)
-		case "meaning":
-			q = s.generateMeaningQuestion(name, allNames)
-		case "arabic":
-			q = s.generateArabicQuestion(name, allNames)
-		default:
-			continue
-		}
-
-		questions = append(questions, q)
+	// Get actual answer text for logging
+	var userAnswerText string
+	if selectedIndex >= 0 && selectedIndex < len(currentQuestion.Options) {
+		userAnswerText = currentQuestion.Options[selectedIndex]
+	} else {
+		userAnswerText = "invalid"
 	}
 
-	rand.Shuffle(len(questions), func(i, j int) {
-		questions[i], questions[j] = questions[j], questions[i]
-	})
+	// Save answer
+	answer := &entities.QuizAnswer{
+		UserID:        userID,
+		SessionID:     sessionID,
+		QuestionID:    currentQuestion.ID,
+		NameNumber:    currentQuestion.NameNumber,
+		UserAnswer:    userAnswerText,
+		CorrectAnswer: currentQuestion.CorrectAnswer,
+		QuestionType:  currentQuestion.QuestionType,
+		IsCorrect:     isCorrect,
+		AnsweredAt:    time.Now(),
+	}
 
-	return questions, nil
+	if err := s.quizRepo.SaveAnswerWithTx(ctx, tx, answer); err != nil {
+		return nil, fmt.Errorf("save answer: %w", err)
+	}
+
+	// Update progress (SRS)
+	quality := entities.DetermineQuality(isCorrect, true)
+	if err := s.updateProgress(ctx, tx, userID, currentQuestion.NameNumber, quality); err != nil {
+		return nil, fmt.Errorf("update progress: %w", err)
+	}
+
+	// Update session
+	if isCorrect {
+		session.IncrementCorrectAnswers()
+	}
+	session.IncrementQuestion()
+
+	// Check if session is complete
+	if session.ShouldComplete() {
+		session.MarkCompleted(time.Now())
+	}
+
+	// Update session with optimistic locking
+	if err := s.quizRepo.UpdateSessionWithTx(ctx, tx, session); err != nil {
+		if errors.Is(err, repository.ErrOptimisticLock) {
+			return nil, errors.New("answer already submitted, please wait")
+		}
+		return nil, fmt.Errorf("update session: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return &AnswerResult{
+		IsCorrect:         isCorrect,
+		CorrectAnswer:     currentQuestion.CorrectAnswer,
+		NameNumber:        currentQuestion.NameNumber,
+		IsSessionComplete: session.IsCompleted(),
+		Score:             session.CorrectAnswers,
+		Total:             session.TotalQuestions,
+		SessionID:         sessionID,
+	}, nil
 }
 
-// randomQuestionType selects a random question type based on settings.
-func (s *QuizService) randomQuestionType(_ *entities.UserSettings) string {
+// GetActiveSession retrieves the active quiz session for a user.
+func (s *QuizService) GetActiveSession(ctx context.Context, userID int64) (*entities.QuizSession, error) {
+	session, err := s.quizRepo.GetActiveSessionByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrSessionNotFound) {
+			return nil, nil // No active session
+		}
+		return nil, fmt.Errorf("get active session: %w", err)
+	}
+
+	return session, nil
+}
+
+// GetCurrentQuestion retrieves the current question for an active session.
+func (s *QuizService) GetCurrentQuestion(ctx context.Context, sessionID int64, questionNum int) (*entities.QuizQuestion, *entities.Name, error) {
+	question, err := s.quizRepo.GetQuestionByOrder(ctx, sessionID, questionNum)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get question: %w", err)
+	}
+
+	name, err := s.nameRepo.GetByNumber(question.NameNumber)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get name: %w", err)
+	}
+
+	return question, name, nil
+}
+
+// randomQuestionType selects a random question type.
+func (s *QuizService) randomQuestionType() entities.QuestionType {
 	return questionTypes[rand.Intn(len(questionTypes))]
 }
 
-// getRandomDistractors returns a random set of distractor names.
-func (s *QuizService) getRandomDistractors(
-	all []*entities.Name,
-	targetNumber int,
-	count int,
-) []*entities.Name {
-	candidates := make([]*entities.Name, 0, len(all))
-	for _, n := range all {
-		if n.Number != targetNumber {
-			candidates = append(candidates, n)
+// getCorrectAnswerByType returns the correct answer based on question type.
+func (s *QuizService) getCorrectAnswerByType(name *entities.Name, questionType entities.QuestionType) string {
+	switch questionType {
+	case entities.QuestionTypeTranslation:
+		return name.ArabicName
+	case entities.QuestionTypeTransliteration:
+		return name.Translation
+	case entities.QuestionTypeMeaning:
+		return name.Transliteration
+	case entities.QuestionTypeArabic:
+		return name.Translation
+	default:
+		return name.Translation
+	}
+}
+
+// validateAnswer checks if the selected option matches the correct answer.
+func (s *QuizService) validateAnswer(selectedOption string, name *entities.Name, questionType string) bool {
+	if s.answerValidator == nil {
+		s.answerValidator = NewAnswerValidator()
+	}
+
+	var correctAnswer string
+
+	switch questionType {
+	case string(entities.QuestionTypeTranslation):
+		correctAnswer = name.Translation
+	case string(entities.QuestionTypeTransliteration):
+		correctAnswer = name.Transliteration
+	case string(entities.QuestionTypeMeaning):
+		correctAnswer = name.Meaning
+	default:
+		return false
+	}
+
+	return s.answerValidator.Validate(selectedOption, correctAnswer)
+}
+
+// updateProgress updates user progress with SRS algorithm.
+func (s *QuizService) updateProgress(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int, quality entities.AnswerQuality) error {
+	// Get existing progress
+	progress, err := s.progressRepo.GetWithTx(ctx, tx, userID, nameNumber)
+	if err != nil {
+		if !errors.Is(err, repository.ErrProgressNotFound) {
+			return err
+		}
+		// Create new progress
+		progress = entities.NewUserProgress(userID, nameNumber)
+	}
+
+	// Remember old phase
+	oldPhase := progress.Phase
+
+	// Update SRS
+	now := time.Now()
+	progress.UpdateSRS(quality, now)
+
+	// Upsert progress
+	if err := s.progressRepo.UpsertWithTx(ctx, tx, progress); err != nil {
+		return err
+	}
+
+	// If transitioned from "new" to "learning", remove from today's list
+	if oldPhase == entities.PhaseNew && progress.Phase == entities.PhaseLearning {
+		// This allows introducing next name via /next
+		if err := s.dailyNameRepo.RemoveTodayName(ctx, userID, nameNumber); err != nil {
+			// Log but don't fail
+			s.logger.Warn("failed to remove from today names",
+				zap.Int64("user_id", userID),
+				zap.Int("name_number", nameNumber),
+				zap.Error(err),
+			)
+		} else {
+			s.logger.Info("removed from today names (transitioned to learning)",
+				zap.Int64("user_id", userID),
+				zap.Int("name_number", nameNumber),
+			)
 		}
 	}
 
-	if len(candidates) <= count {
-		return candidates
-	}
-
-	rand.Shuffle(len(candidates), func(i, j int) {
-		candidates[i], candidates[j] = candidates[j], candidates[i]
-	})
-
-	return candidates[:count]
-}
-
-// buildOptionsWithCorrect builds a shuffled set of options with the correct answer.
-func buildOptionsWithCorrect(correct string, distractors []string) ([]string, int) {
-	options := make([]string, 0, 1+len(distractors))
-	options = append(options, correct)
-	options = append(options, distractors...)
-
-	rand.Shuffle(len(options), func(i, j int) {
-		options[i], options[j] = options[j], options[i]
-	})
-
-	correctIndex := 0
-	for i, opt := range options {
-		if opt == correct {
-			correctIndex = i
-			break
-		}
-	}
-
-	return options, correctIndex
-}
-
-// generateTranslationQuestion creates a translation quiz question.
-func (s *QuizService) generateTranslationQuestion(
-	target *entities.Name,
-	allNames []*entities.Name,
-) entities.Question {
-	distractorNames := s.getRandomDistractors(allNames, target.Number, 3)
-
-	distractorOptions := make([]string, 0, len(distractorNames))
-	for _, d := range distractorNames {
-		distractorOptions = append(distractorOptions, d.ArabicName)
-	}
-
-	options, correctIndex := buildOptionsWithCorrect(target.ArabicName, distractorOptions)
-
-	return entities.Question{
-		NameNumber:    target.Number,
-		Type:          "translation",
-		Question:      fmt.Sprintf("Какое арабское имя означает %s?", target.Translation),
-		Options:       options,
-		CorrectIndex:  correctIndex,
-		CorrectAnswer: target.ArabicName,
-	}
-}
-
-// generateTransliterationQuestion creates a transliteration quiz question.
-func (s *QuizService) generateTransliterationQuestion(
-	target *entities.Name,
-	allNames []*entities.Name,
-) entities.Question {
-	distractorNames := s.getRandomDistractors(allNames, target.Number, 3)
-
-	distractorOptions := make([]string, 0, len(distractorNames))
-	for _, d := range distractorNames {
-		distractorOptions = append(distractorOptions, d.Translation)
-	}
-
-	options, correctIndex := buildOptionsWithCorrect(target.Translation, distractorOptions)
-
-	return entities.Question{
-		NameNumber:    target.Number,
-		Type:          "transliteration",
-		Question:      fmt.Sprintf("Что означает имя %s?", target.Transliteration),
-		Options:       options,
-		CorrectIndex:  correctIndex,
-		CorrectAnswer: target.Translation,
-	}
-}
-
-// generateMeaningQuestion creates a meaning quiz question.
-func (s *QuizService) generateMeaningQuestion(
-	target *entities.Name,
-	allNames []*entities.Name,
-) entities.Question {
-	distractorNames := s.getRandomDistractors(allNames, target.Number, 3)
-
-	distractorOptions := make([]string, 0, len(distractorNames))
-	for _, d := range distractorNames {
-		distractorOptions = append(distractorOptions, d.Transliteration)
-	}
-
-	options, correctIndex := buildOptionsWithCorrect(target.Transliteration, distractorOptions)
-
-	text := target.Meaning
-	if text == "" {
-		text = target.Translation
-	}
-
-	return entities.Question{
-		NameNumber:    target.Number,
-		Type:          "meaning",
-		Question:      fmt.Sprintf("Какое из имён соответствует значению: %s?", text),
-		Options:       options,
-		CorrectIndex:  correctIndex,
-		CorrectAnswer: target.Transliteration,
-	}
-}
-
-// generateArabicQuestion creates an Arabic quiz question.
-func (s *QuizService) generateArabicQuestion(
-	target *entities.Name,
-	allNames []*entities.Name,
-) entities.Question {
-	distractorNames := s.getRandomDistractors(allNames, target.Number, 3)
-
-	distractorOptions := make([]string, 0, len(distractorNames))
-	for _, d := range distractorNames {
-		distractorOptions = append(distractorOptions, d.Translation)
-	}
-
-	options, correctIndex := buildOptionsWithCorrect(target.Translation, distractorOptions)
-
-	return entities.Question{
-		NameNumber:    target.Number,
-		Type:          "arabic",
-		Question:      fmt.Sprintf("Что означает арабское имя %s?", target.ArabicName),
-		Options:       options,
-		CorrectIndex:  correctIndex,
-		CorrectAnswer: target.Translation,
-	}
+	return nil
 }

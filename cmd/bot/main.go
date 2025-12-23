@@ -49,24 +49,32 @@ func main() {
 			Description: "Начать работу с ботом",
 		},
 		{
+			Command:     "next",
+			Description: "Начать изучение следующего имени",
+		},
+		{
+			Command:     "today",
+			Description: "Список имен на сегодня",
+		},
+		{
+			Command:     "random",
+			Description: "Случайное имя из сегодняшних",
+		},
+		{
+			Command:     "quiz",
+			Description: "Пройти квиз по изученным именам",
+		},
+		{
 			Command:     "all",
 			Description: "Показать все 99 имён",
 		},
 		{
-			Command:     "random",
-			Description: "Получить случайное имя",
-		},
-		{
 			Command:     "range",
-			Description: "Получить имена в диапазоне (например, /range 25 30)",
+			Description: "Показать имена в диапазоне (например, /range 1 10)",
 		},
 		{
 			Command:     "progress",
 			Description: "Показать прогресс изучения",
-		},
-		{
-			Command:     "quiz",
-			Description: "Пройти квиз по именам",
 		},
 		{
 			Command:     "settings",
@@ -137,17 +145,20 @@ func main() {
 	userRepo := repository.NewUserRepository(pool)
 	userService := service.NewUserService(userRepo)
 
-	progressRepo := repository.NewProgressRepository(pool)
-	progressService := service.NewProgressService(progressRepo)
-
 	settingsRepo := repository.NewSettingsRepository(pool)
 	settingsService := service.NewSettingsService(settingsRepo)
 
+	progressRepo := repository.NewProgressRepository(pool)
+	progressService := service.NewProgressService(progressRepo, settingsRepo)
+
+	dailyNameRepo := repository.NewDailyNameRepository(pool)
+	dailyNameService := service.NewDailyNameService(dailyNameRepo)
+
 	quizRepo := repository.NewQuizRepository(pool)
-	quizService := service.NewQuizService(nameRepo, progressRepo, quizRepo, settingsRepo)
+	quizService := service.NewQuizService(pool, nameRepo, progressRepo, quizRepo, settingsRepo, dailyNameRepo, lg)
 
 	remindersRepo := repository.NewRemindersRepository(pool)
-	remindersService := service.NewReminderService(remindersRepo, progressRepo, settingsRepo, nameRepo, lg)
+	remindersService := service.NewReminderService(remindersRepo, progressRepo, settingsRepo, nameRepo, dailyNameRepo, lg)
 
 	// Initialize in-memory storage for quiz sessions.
 	quizStorage := storage.NewQuizStorage()
@@ -163,6 +174,7 @@ func main() {
 		quizService,
 		quizStorage,
 		remindersService,
+		dailyNameService,
 	)
 
 	// Register Telegram notifier in reminders service.
