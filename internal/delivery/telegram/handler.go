@@ -124,6 +124,9 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		case "next":
 			_ = h.withErrorHandling(h.handleNext(from.ID, messageID))(ctx, chatID)
 
+		case "today":
+			_ = h.withErrorHandling(h.handleToday(from.ID, messageID))(ctx, chatID)
+
 		case "random":
 			_ = h.withErrorHandling(h.handleRandom(from.ID, messageID))(ctx, chatID)
 
@@ -143,7 +146,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			_ = h.withErrorHandling(h.handleSettings(from.ID, messageID))(ctx, chatID)
 
 		case "help":
-			msg := newPlainMessage(chatID, helpMessage())
+			msg := newMessage(chatID, helpMessage())
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send help message",
 					zap.Error(err),
