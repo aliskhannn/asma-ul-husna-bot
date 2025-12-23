@@ -1,62 +1,44 @@
-## Stage 1: Goose builder
-#FROM golang:1.25-alpine AS goose-builder
-#
-#RUN --mount=type=cache,id=s/4b1c887d-5392-4166-8f74-b1e79e74f30c-/go/pkg/mod,target=/go/pkg/mod \
-#    --mount=type=cache,id=s/4b1c887d-5392-4166-8f74-b1e79e74f30c-/root/.cache/go-build,target=/root/.cache/go-build \
-#    go install github.com/pressly/goose/v3/cmd/goose@latest
-#
-## Stage 2: Application builder
-#FROM golang:1.25-alpine AS builder
-#
-#WORKDIR /app
-#
-#COPY go.mod go.sum ./
-#
-#RUN --mount=type=cache,id=s/4b1c887d-5392-4166-8f74-b1e79e74f30c-/go/pkg/mod,target=/go/pkg/mod \
-#    go mod download && go mod verify
-#
-#COPY . .
-#
-#RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-#    go build -a -ldflags="-s -w" -o husna-bot ./cmd/bot/main.go
-#
-#RUN go install github.com/pressly/goose/v3/cmd/goose@latest
-#
-## Stage 3: Runtime
-#FROM alpine:latest
-#
-#WORKDIR /app
-#
-#RUN apk --no-cache add ca-certificates tzdata
-#
-#COPY --from=goose-builder /go/bin/goose /usr/local/bin/goose
-#
-#COPY --from=builder /app/husna-bot .
-#
-#COPY --from=builder /app/migrations ./migrations
-#
-#COPY --from=builder /app/config ./config
-#COPY --from=builder /app/assets ./assets
-#
-#COPY entrypoint.sh .
-#RUN chmod +x entrypoint.sh
-#
-#CMD ["./entrypoint.sh"]
+# Stage 1: Goose builder
+FROM golang:1.25-alpine AS goose-builder
 
-FROM golang:1.25 AS builder
+RUN --mount=type=cache,id=s/4b1c887d-5392-4166-8f74-b1e79e74f30c-/go/pkg/mod,target=/go/pkg/mod \
+    --mount=type=cache,id=s/4b1c887d-5392-4166-8f74-b1e79e74f30c-/root/.cache/go-build,target=/root/.cache/go-build \
+    go install github.com/pressly/goose/v3/cmd/goose@latest
+
+# Stage 2: Application builder
+FROM golang:1.25-alpine AS builder
+
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . ./
-RUN CGO_ENABLED=0 go build -o husna-bot ./cmd/bot/main.go
 
+COPY go.mod go.sum ./
+
+RUN --mount=type=cache,id=s/4b1c887d-5392-4166-8f74-b1e79e74f30c-/go/pkg/mod,target=/go/pkg/mod \
+    go mod download && go mod verify
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -a -ldflags="-s -w" -o husna-bot ./cmd/bot/main.go
+
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+
+# Stage 3: Runtime
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
+
+WORKDIR /app
+
+RUN apk --no-cache add ca-certificates tzdata
+
+COPY --from=goose-builder /go/bin/goose /usr/local/bin/goose
 
 COPY --from=builder /app/husna-bot .
 
-COPY config ./config
-COPY assets ./assets
+COPY --from=builder /app/migrations ./migrations
 
-CMD ["./husna-bot"]
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/assets ./assets
+
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+CMD ["./entrypoint.sh"]
