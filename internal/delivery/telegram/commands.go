@@ -186,7 +186,7 @@ func (h *Handler) handleToday(userID int64, messageID int) HandlerFunc {
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("📚 *Сегодня изучаете (%d/%d):*\n\n",
+		sb.WriteString(fmt.Sprintf("📚 *Сегодня изучаете \\(%d/%d\\):*\n\n",
 			len(todayNames), settings.NamesPerDay))
 
 		for i, nameNumber := range todayNames {
@@ -198,7 +198,7 @@ func (h *Handler) handleToday(userID int64, messageID int) HandlerFunc {
 		}
 
 		if len(todayNames) < settings.NamesPerDay {
-			sb.WriteString(fmt.Sprintf("\n✅ *%d/%d* — пройдите /quiz чтобы разблокировать следующие!",
+			sb.WriteString(fmt.Sprintf("\n✅ *%d/%d* — пройдите /quiz чтобы разблокировать следующие\\!",
 				len(todayNames), settings.NamesPerDay))
 		}
 
