@@ -1,7 +1,6 @@
 package entities
 
 import (
-	"strings"
 	"time"
 )
 
@@ -17,34 +16,29 @@ type QuizSession struct {
 	SessionStatus      string     // session status: "active", "completed", or "abandoned"
 	StartedAt          time.Time  // timestamp when the quiz started
 	CompletedAt        *time.Time // timestamp when the quiz was completed (nullable)
+	Version            int        // for optimistic locking
 }
 
-// NewQuizSession creates a new quiz session for a user with the specified total questions and mode.
-func NewQuizSession(userID int64, totalQuestions int, mode string) *QuizSession {
-	return &QuizSession{
-		UserID:             userID,
-		CurrentQuestionNum: 1,
-		CorrectAnswers:     0,
-		TotalQuestions:     totalQuestions,
-		QuizMode:           mode,
-		SessionStatus:      "active",
-		StartedAt:          time.Now(),
-	}
-}
-
-// Complete marks the quiz session as completed and sets the completion timestamp.
-func (qs *QuizSession) Complete() {
-	qs.SessionStatus = "completed"
-	now := time.Now()
-	qs.CompletedAt = &now
+// QuizQuestion represents a single question in a quiz session.
+type QuizQuestion struct {
+	ID            int64
+	SessionID     int64
+	QuestionOrder int
+	NameNumber    int
+	QuestionType  string
+	CorrectAnswer string
+	Options       []string
+	CorrectIndex  int
+	CreatedAt     time.Time
 }
 
 // QuizAnswer represents a user's answer to a quiz question.
 // It tracks the answer details, correctness, and timestamp.
 type QuizAnswer struct {
-	ID            int64     // unique answer ID
-	UserID        int64     // user ID who answered
-	SessionID     int64     // quiz session ID
+	ID            int64 // unique answer ID
+	UserID        int64 // user ID who answered
+	SessionID     int64 // quiz session ID
+	QuestionID    int64
 	NameNumber    int       // number of the associated name
 	UserAnswer    string    // user's answer
 	CorrectAnswer string    // correct answer
@@ -53,23 +47,51 @@ type QuizAnswer struct {
 	AnsweredAt    time.Time // timestamp when the answer was submitted
 }
 
-// NewQuizAnswer creates a new quiz answer for a user, session, and name.
-func NewQuizAnswer(userID, sessionID int64, nameNumber int, questionType string) *QuizAnswer {
-	return &QuizAnswer{
-		UserID:       userID,
-		SessionID:    sessionID,
-		NameNumber:   nameNumber,
-		QuestionType: questionType,
-		AnsweredAt:   time.Now(),
-	}
+// QuestionType represents the type of quiz question.
+type QuestionType string
+
+const (
+	QuestionTypeTranslation     QuestionType = "translation"
+	QuestionTypeTransliteration QuestionType = "transliteration"
+	QuestionTypeMeaning         QuestionType = "meaning"
+	QuestionTypeArabic          QuestionType = "arabic"
+)
+
+// IsActive returns true if the session is currently active.
+func (q *QuizSession) IsActive() bool {
+	return q.SessionStatus == "active"
 }
 
-// CheckAnswer sets the user's answer, correct answer, and determines if the answer is correct.
-func (qa *QuizAnswer) CheckAnswer(userAnswer, correctAnswer string) {
-	qa.UserAnswer = userAnswer
-	qa.CorrectAnswer = correctAnswer
-	qa.IsCorrect = strings.EqualFold(
-		strings.TrimSpace(userAnswer),
-		strings.TrimSpace(correctAnswer),
-	)
+// IsCompleted returns true if the session is completed.
+func (s *QuizSession) IsCompleted() bool {
+	return s.SessionStatus == "completed"
+}
+
+// MarkCompleted marks the session as completed.
+func (s *QuizSession) MarkCompleted(now time.Time) {
+	s.SessionStatus = "completed"
+	s.CompletedAt = &now
+}
+
+// IncrementQuestion moves to the next question.
+func (s *QuizSession) IncrementQuestion() {
+	s.CurrentQuestionNum++
+}
+
+// IncrementCorrectAnswers increments the correct answers counter.
+func (s *QuizSession) IncrementCorrectAnswers() {
+	s.CorrectAnswers++
+}
+
+// ShouldComplete returns true if all questions have been answered.
+func (s *QuizSession) ShouldComplete() bool {
+	return s.CurrentQuestionNum > s.TotalQuestions
+}
+
+// AccuracyPercentage returns the accuracy as a percentage.
+func (s *QuizSession) AccuracyPercentage() float64 {
+	if s.TotalQuestions == 0 {
+		return 0
+	}
+	return float64(s.CorrectAnswers) / float64(s.TotalQuestions) * 100
 }

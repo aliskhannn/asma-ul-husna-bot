@@ -1,5 +1,3 @@
-// callbacks.go contains handlers for callback queries.
-
 package telegram
 
 import (
@@ -194,6 +192,11 @@ func (h *Handler) handleSettingsNavigation(ctx context.Context, cb *tgbotapi.Cal
 	switch subAction {
 	case settingsMenu:
 		return h.showSettingsMenu(ctx, cb)
+
+	case settingsLearningMode:
+		msg := "🎯 " + bold("Режим обучения") + "\n\n" + learningModeDescription()
+		return h.showSettingsSubmenu(cb, msg, buildLearningModeKeyboard())
+
 	case settingsNamesPerDay:
 		msg := "📚 " + bold("Сколько новых имён изучать в день?") + "\n\n" +
 			md("Выберите интенсивность обучения:")
@@ -216,6 +219,8 @@ func (h *Handler) handleSettingsNavigation(ctx context.Context, cb *tgbotapi.Cal
 // applySettingValue applies a new setting value.
 func (h *Handler) applySettingValue(ctx context.Context, cb *tgbotapi.CallbackQuery, subAction, value string) error {
 	switch subAction {
+	case settingsLearningMode:
+		return h.applyLearningMode(ctx, cb, value)
 	case settingsNamesPerDay:
 		return h.applyNamesPerDay(ctx, cb, value)
 	case settingsQuizMode:
@@ -224,6 +229,24 @@ func (h *Handler) applySettingValue(ctx context.Context, cb *tgbotapi.CallbackQu
 		h.logger.Warn("unknown settings sub-action with value", zap.String("sub_action", subAction))
 		return nil
 	}
+}
+
+func (h *Handler) applyLearningMode(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
+	if value != "guided" && value != "free" {
+		h.logger.Warn("invalid learning_mode value", zap.String("value", value))
+		return nil
+	}
+
+	if err := h.settingsService.UpdateLearningMode(ctx, cb.From.ID, value); err != nil {
+		if errors.Is(err, repository.ErrSettingsNotFound) {
+			msg := newPlainMessage(cb.Message.Chat.ID, msgSettingsUnavailable)
+			return h.send(msg)
+		}
+		return err
+	}
+
+	modeText := formatLearningMode(entities.LearningMode(value))
+	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Режим обучения: %s", modeText))
 }
 
 // showSettingsMenu displays the main settings menu.
@@ -321,7 +344,7 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 			h.logger.Error("failed to delete message", zap.Error(err))
 		}
 
-		return h.handleQuiz(userID)(ctx, chatID)
+		return h.handleQuiz(userID, cb.Message.MessageID)(ctx, chatID)
 
 	case reminderSnooze:
 		if err := h.reminderService.SnoozeReminder(ctx, userID, time.Hour); err != nil {
@@ -466,61 +489,17 @@ func (h *Handler) confirmSettingAndShowReminderSettings(ctx context.Context, cb 
 func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	data := decodeCallback(cb.Data)
 
-	if len(data.Params) < 1 {
-		return fmt.Errorf("invalid quiz callback: no params")
+	// Handle "start quiz" action
+	if len(data.Params) == 1 && data.Params[0] == quizStart {
+		return h.handleQuiz(cb.From.ID, cb.Message.MessageID)(ctx, cb.Message.Chat.ID)
 	}
 
-	// Check if it's quiz start.
-	if data.Params[0] == quizStart {
-		return h.handleQuizStart(ctx, cb)
+	// Handle quiz answer: quiz:sessionID:questionNum:answerIndex
+	if len(data.Params) < 3 {
+		h.logger.Warn("invalid quiz callback params", zap.String("raw", data.Raw))
+		return nil
 	}
 
-	// Otherwise, it's a quiz answer: quiz:{sessionID}:{questionNum}:{answerIndex}
-	if len(data.Params) != 3 {
-		return fmt.Errorf("invalid quiz answer callback: expected 3 params, got %d", len(data.Params))
-	}
-
-	return h.handleQuizAnswer(ctx, cb, data)
-}
-
-// handleQuizStart starts a new quiz session.
-func (h *Handler) handleQuizStart(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
-	chatID := cb.Message.Chat.ID
-	userID := cb.From.ID
-
-	// Delete previous message.
-	deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
-	_, _ = h.bot.Send(deleteMsg)
-
-	settings, err := h.settingsService.GetOrCreate(ctx, userID)
-	if err != nil {
-		msg := newPlainMessage(chatID, msgSettingsUnavailable)
-		return h.send(msg)
-	}
-
-	mode := settings.QuizMode
-	session, questions, err := h.quizService.GenerateQuiz(ctx, userID, mode)
-	if err != nil || len(questions) == 0 {
-		msg := newPlainMessage(chatID, msgQuizUnavailable)
-		return h.send(msg)
-	}
-
-	h.storeQuizQuestions(session.ID, questions)
-
-	startMsg := newMessage(chatID, buildQuizStartMessage(mode))
-	if err := h.send(startMsg); err != nil {
-		return err
-	}
-
-	if err := h.sendQuizQuestion(chatID, session, &questions[0], 1); err != nil {
-		return err
-	}
-
-	return h.answerCallback(cb.ID, "")
-}
-
-// handleQuizAnswer processes a quiz answer.
-func (h *Handler) handleQuizAnswer(ctx context.Context, cb *tgbotapi.CallbackQuery, data callbackData) error {
 	sessionID, err := strconv.ParseInt(data.Params[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid session ID: %w", err)
@@ -539,65 +518,73 @@ func (h *Handler) handleQuizAnswer(ctx context.Context, cb *tgbotapi.CallbackQue
 	userID := cb.From.ID
 	chatID := cb.Message.Chat.ID
 
-	session, err := h.quizService.GetSession(ctx, sessionID)
+	// Submit answer with index
+	result, err := h.quizService.SubmitAnswer(ctx, sessionID, userID, strconv.Itoa(answerIndex))
 	if err != nil {
-		return err
-	}
-
-	if questionNum != session.CurrentQuestionNum {
-		return h.answerCallback(cb.ID, "Вопрос уже был отвечен")
-	}
-
-	questions := h.getQuizQuestions(sessionID)
-	if questions == nil || questionNum > len(questions) {
-		return h.answerCallback(cb.ID, "Вопрос не найден")
-	}
-
-	question := &questions[questionNum-1]
-	isCorrect := answerIndex == question.CorrectIndex
-
-	// Record SRS review.
-	quality := entities.QualityGood
-	if !isCorrect {
-		quality = entities.QualityFail
-	}
-
-	if err := h.progressService.RecordReviewSRS(ctx, userID, question.NameNumber, quality); err != nil {
-		h.logger.Error("failed to record SRS review", zap.Error(err))
-		// Continue execution, not a critical error.
-	}
-
-	// Save answer.
-	answer, err := h.quizService.CheckAndSaveAnswer(ctx, userID, session, question, answerIndex)
-	if err != nil {
-		h.logger.Error("failed to check answer", zap.Error(err))
+		if strings.Contains(err.Error(), "already submitted") {
+			return h.answerCallback(cb.ID, "Ответ уже отправлен")
+		}
+		h.logger.Error("failed to submit answer",
+			zap.Error(err),
+			zap.Int64("session_id", sessionID),
+			zap.Int("question_num", questionNum),
+			zap.Int("answer_index", answerIndex),
+		)
 		return h.answerCallback(cb.ID, "Ошибка при проверке ответа")
 	}
 
-	// Delete question message.
+	// Delete question message
 	deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
-	_, _ = h.bot.Send(deleteMsg)
+	_ = h.send(deleteMsg)
 
-	// Send feedback.
-	feedbackText := formatAnswerFeedback(answer.IsCorrect, question.CorrectAnswer)
+	// Send feedback
+	feedbackText := formatAnswerFeedback(result.IsCorrect, result.CorrectAnswer)
 	feedbackMsg := newMessage(chatID, feedbackText)
 	_, err = h.bot.Send(feedbackMsg)
 	if err != nil {
 		h.logger.Error("failed to send feedback", zap.Error(err))
 	}
 
-	// Check if quiz is completed.
-	if session.SessionStatus == "completed" {
-		return h.sendQuizResults(chatID, session)
+	// Check if quiz is completed
+	if result.IsSessionComplete {
+		// Clear storage
+		h.quizStorage.Delete(sessionID)
+
+		// Build session summary
+		completedSession := &entities.QuizSession{
+			ID:             sessionID,
+			CorrectAnswers: result.Score,
+			TotalQuestions: result.Total,
+			SessionStatus:  "completed",
+		}
+		return h.sendQuizResults(chatID, completedSession)
 	}
 
-	// Send next question.
-	if session.CurrentQuestionNum <= len(questions) {
-		nextQuestion := &questions[session.CurrentQuestionNum-1]
-		err = h.sendQuizQuestion(chatID, session, nextQuestion, session.CurrentQuestionNum)
-		if err != nil {
-			h.logger.Error("failed to send next question", zap.Error(err))
-		}
+	// Send next question
+	nextQuestionNum := questionNum + 1
+	question, nextName, err := h.quizService.GetCurrentQuestion(ctx, sessionID, nextQuestionNum)
+	if err != nil {
+		h.logger.Error("failed to get next question",
+			zap.Error(err),
+			zap.Int64("session_id", sessionID),
+			zap.Int("next_question_num", nextQuestionNum),
+		)
+		return h.answerCallback(cb.ID, "Ошибка при загрузке следующего вопроса")
+	}
+
+	// Get active session to pass correct data
+	session, err := h.quizService.GetActiveSession(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to get active session",
+			zap.Error(err),
+			zap.Int64("user_id", userID),
+		)
+		return nil
+	}
+
+	err = h.sendQuizQuestionFromDB(chatID, session, question, nextName, nextQuestionNum)
+	if err != nil {
+		h.logger.Error("failed to send next question", zap.Error(err))
 	}
 
 	return h.answerCallback(cb.ID, "")

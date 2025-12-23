@@ -21,7 +21,7 @@ func NewUserService(repository UserRepository) *UserService {
 func (s *UserService) EnsureUser(ctx context.Context, userID, chatID int64) error {
 	user := entities.NewUser(userID, chatID)
 
-	exists, err := s.repository.UserExists(ctx, user.ID)
+	exists, err := s.repository.Exists(ctx, user.ID)
 	if err != nil {
 		return err
 	}
@@ -29,5 +29,5 @@ func (s *UserService) EnsureUser(ctx context.Context, userID, chatID int64) erro
 		return nil
 	}
 
-	return s.repository.SaveUser(ctx, user)
+	return s.repository.Save(ctx, user)
 }

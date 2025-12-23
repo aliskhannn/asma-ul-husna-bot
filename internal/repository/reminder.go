@@ -12,7 +12,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
-var ErrReminderNotFound = errors.New("reminder record not found")
+var ErrReminderNotFound = errors.New("reminder not found")
 
 // ReminderRepository provides access to user reminder data in the database.
 type ReminderRepository struct {
@@ -24,145 +24,179 @@ func NewRemindersRepository(db *pgxpool.Pool) *ReminderRepository {
 	return &ReminderRepository{db: db}
 }
 
-// GetDueReminders retrieves all reminders that are due to be sent at the current time.
-func (r *ReminderRepository) GetDueReminders(ctx context.Context) ([]*entities.ReminderWithUser, error) {
+// GetByUserID retrieves reminder settings for a user.
+func (r *ReminderRepository) GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error) {
 	query := `
-        SELECT
-           r.user_id,
-          r.is_enabled,
-           r.interval_hours,
-           r.start_time_utc,
-           r.end_time_utc,
-           r.last_sent_at,
-           r.created_at,
-           r.updated_at,
-           u.id          AS user_id,
-           u.chat_id     AS chat_id
-       FROM user_reminders r
-       JOIN users u ON u.id = r.user_id
-       WHERE r.is_enabled = true
-          AND (
-              r.last_sent_at IS NULL
-              OR r.last_sent_at < (
-                  NOW() AT TIME ZONE 'UTC'
-                  - (r.interval_hours || ' hours')::interval
-              )
-          )
-          AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'UTC') BETWEEN
-              EXTRACT(HOUR FROM r.start_time_utc) AND
-              EXTRACT(HOUR FROM r.end_time_utc)
-       ORDER BY r.user_id;
-    `
+		SELECT user_id, is_enabled, interval_hours, start_time, end_time,
+		       last_sent_at, next_send_at, created_at, updated_at
+		FROM user_reminders
+		WHERE user_id = $1
+	`
 
-	rows, err := r.db.Query(ctx, query)
+	var reminder entities.UserReminders
+	err := r.db.QueryRow(ctx, query, userID).Scan(
+		&reminder.UserID,
+		&reminder.IsEnabled,
+		&reminder.IntervalHours,
+		&reminder.StartTime,
+		&reminder.EndTime,
+		&reminder.LastSentAt,
+		&reminder.NextSendAt,
+		&reminder.CreatedAt,
+		&reminder.UpdatedAt,
+	)
+
 	if err != nil {
-		return nil, fmt.Errorf("get due reminders: %w", err)
-	}
-	defer rows.Close()
-
-	var res []*entities.ReminderWithUser
-	for rows.Next() {
-		var rwu entities.ReminderWithUser
-		if err := rows.Scan(
-			&rwu.UserID,
-			&rwu.IsEnabled,
-			&rwu.IntervalHours,
-			&rwu.StartTimeUTC,
-			&rwu.EndTimeUTC,
-			&rwu.LastSentAt,
-			&rwu.CreatedAt,
-			&rwu.UpdatedAt,
-			&rwu.UserID,
-			&rwu.ChatID,
-		); err != nil {
-			return nil, fmt.Errorf("scan reminder: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrReminderNotFound
 		}
-		res = append(res, &rwu)
+		return nil, fmt.Errorf("get reminder: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows err: %w", err)
-	}
-
-	return res, nil
+	return &reminder, nil
 }
 
-// MarkAsSent updates the last_sent_at field for a user's reminder to the given timestamp.
-func (r *ReminderRepository) MarkAsSent(ctx context.Context, userID int64, sentAt time.Time) error {
-	query := `
-       UPDATE user_reminders
-       SET last_sent_at = $2,
-           updated_at = NOW()
-       WHERE user_id = $1
-    `
-
-	cmdTag, err := r.db.Exec(ctx, query, userID, sentAt)
+// Upsert creates or updates reminder settings.
+func (r *ReminderRepository) Upsert(ctx context.Context, reminder *entities.UserReminders) error {
+	// Get user's timezone
+	var timezone string
+	err := r.db.QueryRow(ctx,
+		"SELECT timezone FROM user_settings WHERE user_id = $1",
+		reminder.UserID,
+	).Scan(&timezone)
 	if err != nil {
-		return fmt.Errorf("mark as sent: %w", err)
+		timezone = "UTC" // Fallback to UTC if not found
 	}
 
-	if cmdTag.RowsAffected() == 0 {
-		return fmt.Errorf("mark as sent: %s", ErrReminderNotFound)
+	// Calculate next_send_at
+	nextSendAt := reminder.CalculateNextSendAt(timezone, time.Now())
+
+	query := `
+		INSERT INTO user_reminders (
+			user_id, is_enabled, interval_hours, start_time, end_time,
+			last_sent_at, next_send_at, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (user_id) DO UPDATE SET
+			is_enabled = EXCLUDED.is_enabled,
+			interval_hours = EXCLUDED.interval_hours,
+			start_time = EXCLUDED.start_time,
+			end_time = EXCLUDED.end_time,
+			last_sent_at = EXCLUDED.last_sent_at,
+			next_send_at = EXCLUDED.next_send_at,
+			updated_at = EXCLUDED.updated_at
+	`
+
+	_, err = r.db.Exec(
+		ctx,
+		query,
+		reminder.UserID,
+		reminder.IsEnabled,
+		reminder.IntervalHours,
+		reminder.StartTime,
+		reminder.EndTime,
+		reminder.LastSentAt,
+		nextSendAt,
+		reminder.CreatedAt,
+		reminder.UpdatedAt,
+	)
+
+	if err != nil {
+		return fmt.Errorf("upsert reminder: %w", err)
 	}
 
 	return nil
 }
 
-// GetByUserID retrieves a reminder record for a specific user.
-// Returns nil if no record is found.
-func (r *ReminderRepository) GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error) {
+// GetDueRemindersBatch retrieves reminders that are due to be sent (paginated).
+func (r *ReminderRepository) GetDueRemindersBatch(ctx context.Context, now time.Time, limit, offset int) ([]*entities.ReminderWithUser, error) {
 	query := `
-        SELECT user_id, is_enabled, interval_hours, start_time_utc, 
-               end_time_utc, last_sent_at, created_at, updated_at
-        FROM user_reminders
-        WHERE user_id = $1
-    `
-	var rem entities.UserReminders
-	err := r.db.QueryRow(ctx, query, userID).Scan(
-		&rem.UserID,
-		&rem.IsEnabled,
-		&rem.IntervalHours,
-		&rem.StartTimeUTC,
-		&rem.EndTimeUTC,
-		&rem.LastSentAt,
-		&rem.CreatedAt,
-		&rem.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
+		SELECT 
+			ur.user_id,
+			u.chat_id,
+			ur.is_enabled,
+			ur.interval_hours,
+			ur.start_time,
+			ur.end_time,
+			ur.last_sent_at,
+			ur.next_send_at,
+			COALESCE(us.timezone, 'UTC') as timezone
+		FROM user_reminders ur
+		INNER JOIN users u ON ur.user_id = u.id
+		LEFT JOIN user_settings us ON ur.user_id = us.user_id
+		WHERE ur.is_enabled = true
+			AND u.is_active = true
+			AND (ur.next_send_at IS NULL OR ur.next_send_at <= $1)
+		ORDER BY ur.next_send_at NULLS FIRST, ur.user_id
+		LIMIT $2 OFFSET $3
+	`
 
-		return nil, fmt.Errorf("get reminder by user id: %w", err)
+	rows, err := r.db.Query(ctx, query, now, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("get due reminders batch: %w", err)
+	}
+	defer rows.Close()
+
+	var reminders []*entities.ReminderWithUser
+	for rows.Next() {
+		var rwu entities.ReminderWithUser
+		err := rows.Scan(
+			&rwu.UserID,
+			&rwu.ChatID,
+			&rwu.IsEnabled,
+			&rwu.IntervalHours,
+			&rwu.StartTime,
+			&rwu.EndTime,
+			&rwu.LastSentAt,
+			&rwu.NextSendAt,
+			&rwu.Timezone,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan reminder: %w", err)
+		}
+		reminders = append(reminders, &rwu)
 	}
 
-	return &rem, nil
+	return reminders, rows.Err()
 }
 
-// Upsert creates or updates a reminder record for a user.
-func (r *ReminderRepository) Upsert(ctx context.Context, rem *entities.UserReminders) error {
+// UpdateAfterSend updates last_sent_at and next_send_at after sending a reminder.
+func (r *ReminderRepository) UpdateAfterSend(ctx context.Context, userID int64, sentAt time.Time, nextSendAt time.Time) error {
 	query := `
-        INSERT INTO user_reminders
-            (user_id, is_enabled, interval_hours, start_time_utc, end_time_utc, last_sent_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (user_id) DO UPDATE SET
-            is_enabled     = EXCLUDED.is_enabled,
-            interval_hours = EXCLUDED.interval_hours,
-            start_time_utc = EXCLUDED.start_time_utc,
-            end_time_utc   = EXCLUDED.end_time_utc,
-            last_sent_at   = EXCLUDED.last_sent_at,
-            updated_at     = NOW()
-    `
-	_, err := r.db.Exec(ctx, query,
-		rem.UserID,
-		rem.IsEnabled,
-		rem.IntervalHours,
-		rem.StartTimeUTC,
-		rem.EndTimeUTC,
-		rem.LastSentAt,
-	)
+		UPDATE user_reminders
+		SET last_sent_at = $1,
+		    next_send_at = $2,
+		    updated_at = $3
+		WHERE user_id = $4
+	`
+
+	result, err := r.db.Exec(ctx, query, sentAt, nextSendAt, time.Now(), userID)
 	if err != nil {
-		return fmt.Errorf("upsert reminder: %w", err)
+		return fmt.Errorf("update after send: %w", err)
 	}
+
+	if result.RowsAffected() == 0 {
+		return ErrReminderNotFound
+	}
+
+	return nil
+}
+
+// MarkAsSent updates the last sent timestamp for a reminder.
+func (r *ReminderRepository) MarkAsSent(ctx context.Context, userID int64, sentAt time.Time) error {
+	query := `
+		UPDATE user_reminders
+		SET last_sent_at = $1, updated_at = $2
+		WHERE user_id = $3
+	`
+
+	result, err := r.db.Exec(ctx, query, sentAt, time.Now(), userID)
+	if err != nil {
+		return fmt.Errorf("mark as sent: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrReminderNotFound
+	}
+
 	return nil
 }

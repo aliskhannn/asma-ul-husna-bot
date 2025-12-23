@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,13 +24,15 @@ func NewSettingsRepository(db *pgxpool.Pool) *SettingsRepository {
 	return &SettingsRepository{db: db}
 }
 
-// Create creates default settings for a new user.
+// Create creates default settings for a user.
 func (r *SettingsRepository) Create(ctx context.Context, userID int64) error {
 	query := `
-        INSERT INTO user_settings (user_id, names_per_day, quiz_mode, language_code, created_at, updated_at)
-        VALUES ($1, 1, 'mixed', 'ru', NOW(), NOW())
-        ON CONFLICT (user_id) DO NOTHING
-    `
+		INSERT INTO user_settings (
+			user_id, names_per_day, max_reviews_per_day, quiz_mode,
+			learning_mode, language_code, timezone, created_at, updated_at
+		) VALUES ($1, 1, 50, 'mixed', 'guided', 'ru', 'UTC', NOW(), NOW())
+		ON CONFLICT (user_id) DO NOTHING
+	`
 
 	_, err := r.db.Exec(ctx, query, userID)
 	if err != nil {
@@ -39,68 +42,132 @@ func (r *SettingsRepository) Create(ctx context.Context, userID int64) error {
 	return nil
 }
 
-// GetByUserID retrieves settings by user ID.
-// Returns ErrSettingsNotFound if settings don't exist.
+// GetByUserID retrieves settings for a user.
 func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*entities.UserSettings, error) {
 	query := `
-        SELECT user_id, names_per_day, quiz_mode, language_code, created_at, updated_at
-        FROM user_settings
-        WHERE user_id = $1
-    `
+		SELECT user_id, names_per_day, max_reviews_per_day, quiz_mode,
+		       learning_mode, language_code, timezone, created_at, updated_at
+		FROM user_settings
+		WHERE user_id = $1
+	`
 
 	var settings entities.UserSettings
 	err := r.db.QueryRow(ctx, query, userID).Scan(
 		&settings.UserID,
 		&settings.NamesPerDay,
+		&settings.MaxReviewsPerDay,
 		&settings.QuizMode,
+		&settings.LearningMode,
 		&settings.LanguageCode,
+		&settings.Timezone,
 		&settings.CreatedAt,
 		&settings.UpdatedAt,
 	)
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrSettingsNotFound
 		}
-		return nil, fmt.Errorf("get settings by user id: %w", err)
+		return nil, fmt.Errorf("get settings: %w", err)
 	}
 
 	return &settings, nil
 }
 
-// UpdateNamesPerDay updates only the names_per_day field.
+// UpdateNamesPerDay updates the number of names to learn per day.
 func (r *SettingsRepository) UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error {
 	query := `
-        UPDATE user_settings
-        SET names_per_day = $2, updated_at = NOW()
-        WHERE user_id = $1
-    `
+		UPDATE user_settings
+		SET names_per_day = $1, updated_at = $2
+		WHERE user_id = $3
+	`
 
-	cmdTag, err := r.db.Exec(ctx, query, userID, namesPerDay)
+	result, err := r.db.Exec(ctx, query, namesPerDay, time.Now(), userID)
 	if err != nil {
 		return fmt.Errorf("update names per day: %w", err)
 	}
 
-	if cmdTag.RowsAffected() == 0 {
+	if result.RowsAffected() == 0 {
 		return ErrSettingsNotFound
 	}
 
 	return nil
 }
 
-// UpdateQuizMode updates only the quiz_mode field.
+// UpdateQuizMode updates the quiz mode setting.
 func (r *SettingsRepository) UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error {
 	query := `
-        UPDATE user_settings
-        SET quiz_mode = $2, updated_at = NOW()
-        WHERE user_id = $1
-    `
+		UPDATE user_settings
+		SET quiz_mode = $1, updated_at = $2
+		WHERE user_id = $3
+	`
 
-	cmdTag, err := r.db.Exec(ctx, query, userID, quizMode)
+	result, err := r.db.Exec(ctx, query, quizMode, time.Now(), userID)
 	if err != nil {
 		return fmt.Errorf("update quiz mode: %w", err)
 	}
 
-	if cmdTag.RowsAffected() == 0 {
+	if result.RowsAffected() == 0 {
+		return ErrSettingsNotFound
+	}
+
+	return nil
+}
+
+// UpdateLearningMode updates the learning mode setting.
+func (r *SettingsRepository) UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error {
+	query := `
+		UPDATE user_settings
+		SET learning_mode = $1, updated_at = $2
+		WHERE user_id = $3
+	`
+
+	result, err := r.db.Exec(ctx, query, learningMode, time.Now(), userID)
+	if err != nil {
+		return fmt.Errorf("update learning mode: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrSettingsNotFound
+	}
+
+	return nil
+}
+
+// UpdateTimezone updates the user's timezone.
+func (r *SettingsRepository) UpdateTimezone(ctx context.Context, userID int64, timezone string) error {
+	query := `
+		UPDATE user_settings
+		SET timezone = $1, updated_at = $2
+		WHERE user_id = $3
+	`
+
+	result, err := r.db.Exec(ctx, query, timezone, time.Now(), userID)
+	if err != nil {
+		return fmt.Errorf("update timezone: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrSettingsNotFound
+	}
+
+	return nil
+}
+
+// UpdateMaxReviewsPerDay updates the maximum reviews per day.
+func (r *SettingsRepository) UpdateMaxReviewsPerDay(ctx context.Context, userID int64, maxReviews int) error {
+	query := `
+		UPDATE user_settings
+		SET max_reviews_per_day = $1, updated_at = $2
+		WHERE user_id = $3
+	`
+
+	result, err := r.db.Exec(ctx, query, maxReviews, time.Now(), userID)
+	if err != nil {
+		return fmt.Errorf("update max reviews per day: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
 		return ErrSettingsNotFound
 	}
 

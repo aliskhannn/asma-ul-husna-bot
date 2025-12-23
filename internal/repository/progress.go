@@ -24,166 +24,124 @@ func NewProgressRepository(db *pgxpool.Pool) *ProgressRepository {
 	return &ProgressRepository{db: db}
 }
 
-// Upsert creates or updates a progress record for a user and name.
-func (r *ProgressRepository) Upsert(ctx context.Context, progress *entities.UserProgress) error {
+// UpsertWithTx creates or updates a progress record within a transaction.
+func (r *ProgressRepository) UpsertWithTx(ctx context.Context, tx pgx.Tx, progress *entities.UserProgress) error {
 	query := `
 		INSERT INTO user_progress (
-			user_id, name_number, is_learned, last_reviewed_at, correct_count,
-			phase, ease, streak, interval_days, next_review_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT (user_id, name_number)
-		DO UPDATE SET
-			is_learned = excluded.is_learned,
-			last_reviewed_at = excluded.last_reviewed_at,
-			correct_count = excluded.correct_count,
-			phase = excluded.phase,
-			ease = excluded.ease,
-			streak = excluded.streak,
-			interval_days = excluded.interval_days,
-			next_review_at = excluded.next_review_at
+			user_id, name_number, phase, ease, streak, interval_days,
+			next_review_at, review_count, correct_count, first_seen_at, last_reviewed_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (user_id, name_number) DO UPDATE SET
+			phase = EXCLUDED.phase,
+			ease = EXCLUDED.ease,
+			streak = EXCLUDED.streak,
+			interval_days = EXCLUDED.interval_days,
+			next_review_at = EXCLUDED.next_review_at,
+			review_count = EXCLUDED.review_count,
+			correct_count = EXCLUDED.correct_count,
+			first_seen_at = COALESCE(user_progress.first_seen_at, EXCLUDED.first_seen_at),
+			last_reviewed_at = EXCLUDED.last_reviewed_at
 	`
 
-	_, err := r.db.Exec(
-		ctx, query,
+	_, err := tx.Exec(
+		ctx,
+		query,
 		progress.UserID,
 		progress.NameNumber,
-		progress.IsLearned,
-		progress.LastReviewedAt,
-		progress.CorrectCount,
 		progress.Phase,
 		progress.Ease,
 		progress.Streak,
 		progress.IntervalDays,
 		progress.NextReviewAt,
+		progress.ReviewCount,
+		progress.CorrectCount,
+		progress.FirstSeenAt,
+		progress.LastReviewedAt,
 	)
+
 	if err != nil {
-		return fmt.Errorf("upsert: %w", err)
+		return fmt.Errorf("upsert progress: %w", err)
 	}
 
 	return nil
 }
 
 // Get retrieves a single progress record by userID and nameNumber.
-// Returns ErrProgressNotFound if the record doesn't exist.
 func (r *ProgressRepository) Get(ctx context.Context, userID int64, nameNumber int) (*entities.UserProgress, error) {
 	query := `
-		SELECT user_id, name_number, is_learned, last_reviewed_at, correct_count,
-		       COALESCE(phase, 'new') as phase,
-		       COALESCE(ease, 2.5) as ease,
-		       COALESCE(streak, 0) as streak,
-		       COALESCE(interval_days, 0) as interval_days,
-		       next_review_at
+		SELECT user_id, name_number, phase, ease, streak, interval_days,
+		       next_review_at, review_count, correct_count, first_seen_at, last_reviewed_at
 		FROM user_progress
 		WHERE user_id = $1 AND name_number = $2
 	`
 
 	var progress entities.UserProgress
 	var phase string
-	err := r.db.QueryRow(
-		ctx, query, userID, nameNumber,
-	).Scan(
+
+	err := r.db.QueryRow(ctx, query, userID, nameNumber).Scan(
 		&progress.UserID,
 		&progress.NameNumber,
-		&progress.IsLearned,
-		&progress.LastReviewedAt,
-		&progress.CorrectCount,
 		&phase,
 		&progress.Ease,
 		&progress.Streak,
 		&progress.IntervalDays,
 		&progress.NextReviewAt,
+		&progress.ReviewCount,
+		&progress.CorrectCount,
+		&progress.FirstSeenAt,
+		&progress.LastReviewedAt,
 	)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrProgressNotFound
 		}
-		return nil, fmt.Errorf("get: %w", err)
+		return nil, fmt.Errorf("get progress: %w", err)
 	}
 
 	progress.Phase = entities.Phase(phase)
 	return &progress, nil
 }
 
-// GetByUserID retrieves all progress records for a given user.
-func (r *ProgressRepository) GetByUserID(ctx context.Context, userID int64) ([]*entities.UserProgress, error) {
+// GetWithTx retrieves progress with appropriate interface.
+func (r *ProgressRepository) GetWithTx(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int) (*entities.UserProgress, error) {
 	query := `
-		SELECT user_id, name_number, is_learned, last_reviewed_at, correct_count
-		FROM user_progress 
-		WHERE user_id = $1
+		SELECT user_id, name_number, phase, ease, streak, interval_days,
+		       next_review_at, review_count, correct_count, first_seen_at, last_reviewed_at
+		FROM user_progress
+		WHERE user_id = $1 AND name_number = $2
 	`
 
-	rows, err := r.db.Query(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get by user id: %w", err)
-	}
-	defer rows.Close()
+	var progress entities.UserProgress
+	var phase string
 
-	var progress []*entities.UserProgress
-	for rows.Next() {
-		var p entities.UserProgress
-		err = rows.Scan(
-			&p.UserID,
-			&p.NameNumber,
-			&p.IsLearned,
-			&p.LastReviewedAt,
-			&p.CorrectCount,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("get by user id: %w", err)
+	err := tx.QueryRow(ctx, query, userID, nameNumber).Scan(
+		&progress.UserID,
+		&progress.NameNumber,
+		&phase,
+		&progress.Ease,
+		&progress.Streak,
+		&progress.IntervalDays,
+		&progress.NextReviewAt,
+		&progress.ReviewCount,
+		&progress.CorrectCount,
+		&progress.FirstSeenAt,
+		&progress.LastReviewedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrProgressNotFound
 		}
-		progress = append(progress, &p)
+
+		return nil, fmt.Errorf("get progress: %w", err)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("get by user id: %w", err)
-	}
-
-	return progress, nil
+	progress.Phase = entities.Phase(phase)
+	return &progress, nil
 }
 
-// MarkAsViewed creates a progress record when user views a name via it's number.
-// Does nothing if record already exists.
-func (r *ProgressRepository) MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error {
-	query := `
-		INSERT INTO user_progress (user_id, name_number, is_learned, last_reviewed_at, correct_count)
-		VALUES ($1, $2, false, NULL, 0)
-		ON CONFLICT (user_id, name_number) DO NOTHING
-	`
-
-	_, err := r.db.Exec(ctx, query, userID, nameNumber)
-	if err != nil {
-		return fmt.Errorf("mark as viewed: %w", err)
-	}
-
-	return nil
-}
-
-// RecordReview updates progress after a quiz answer.
-// Updates last_reviewed_at and increments correct_count if answer is correct.
-func (r *ProgressRepository) RecordReview(ctx context.Context, userID int64, nameNumber int, isCorrect bool, reviewedAt time.Time) error {
-	query := `
-		INSERT INTO user_progress (user_id, name_number, is_learned, last_reviewed_at, correct_count)
-		VALUES ($1, $2, false, $3, CASE WHEN $4 THEN 1 ELSE 0 END)
-		ON CONFLICT (user_id, name_number)
-		DO UPDATE SET
-			last_reviewed_at = excluded.last_reviewed_at,
-			correct_count = CASE
-				WHEN $4 THEN user_progress.correct_count + 1
-				ELSE user_progress.correct_count
-			END
-	`
-
-	_, err := r.db.Exec(ctx, query, userID, nameNumber, reviewedAt, isCorrect)
-	if err != nil {
-		return fmt.Errorf("record review: %w", err)
-	}
-
-	return nil
-}
-
-// GetNamesDueForReview retrieves names that need to be reviewed right now (SRS).
+// GetNamesDueForReview retrieves names that need review based on SRS.
 func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error) {
 	query := `
 		SELECT name_number
@@ -210,27 +168,86 @@ func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID in
 		nameNumbers = append(nameNumbers, num)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate review names: %w", err)
-	}
-
-	return nameNumbers, nil
+	return nameNumbers, rows.Err()
 }
 
-// GetNewNames returns name numbers that haven't been learned yet.
-// Used for generating "new only" quizzes.
+// GetLearningNames retrieves names in the learning phase that need practice.
+func (r *ProgressRepository) GetLearningNames(ctx context.Context, userID int64, limit int) ([]int, error) {
+	query := `
+			SELECT name_number
+			FROM user_progress
+			WHERE user_id = $1
+			  AND phase = 'learning'
+			  AND (next_review_at IS NULL OR next_review_at <= NOW())
+			ORDER BY 
+				COALESCE(next_review_at, last_reviewed_at) NULLS FIRST
+			LIMIT $2
+		`
+
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get learning names: %w", err)
+	}
+	defer rows.Close()
+
+	nameNumbers := make([]int, 0, limit)
+	for rows.Next() {
+		var num int
+		if err := rows.Scan(&num); err != nil {
+			return nil, fmt.Errorf("scan learning name: %w", err)
+		}
+		nameNumbers = append(nameNumbers, num)
+	}
+
+	return nameNumbers, rows.Err()
+}
+
+func (r *ProgressRepository) GetNamesForIntroduction(ctx context.Context, userID int64, limit int) ([]int, error) {
+	query := `
+		WITH all_names AS (
+			SELECT generate_series(1, 99) AS name_number
+		)
+		SELECT an.name_number
+		FROM all_names an
+		LEFT JOIN user_progress up ON up.user_id = $1 AND up.name_number = an.name_number
+		WHERE up.name_number IS NULL
+		ORDER BY an.name_number ASC
+		LIMIT $2
+	`
+
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get names for introduction: %w", err)
+	}
+	defer rows.Close()
+
+	var nameNumbers []int
+	for rows.Next() {
+		var num int
+		if err := rows.Scan(&num); err != nil {
+			return nil, fmt.Errorf("scan introduction name: %w", err)
+		}
+		nameNumbers = append(nameNumbers, num)
+	}
+
+	return nameNumbers, rows.Err()
+}
+
+// GetNewNames returns names in "new" phase or early "learning" for quiz introduction.
+// Used ONLY in Free mode quizzes to introduce new names.
 func (r *ProgressRepository) GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error) {
 	query := `
-        WITH all_names AS (
-            SELECT generate_series(1, 99) AS name_number
-        )
-        SELECT an.name_number
-        FROM all_names an
-        LEFT JOIN user_progress up ON an.name_number = up.name_number AND up.user_id = $1
-        WHERE up.name_number IS NULL OR up.is_learned = false
-        ORDER BY an.name_number ASC
-        LIMIT $2
-    `
+		WITH all_names AS (
+			SELECT generate_series(1, 99) AS name_number
+		)
+		SELECT an.name_number
+		FROM all_names an
+		LEFT JOIN user_progress up ON an.name_number = up.name_number AND up.user_id = $1
+		WHERE up.name_number IS NULL
+		   OR (up.phase = 'new' AND up.review_count < 2)
+		ORDER BY an.name_number ASC
+		LIMIT $2
+	`
 
 	rows, err := r.db.Query(ctx, query, userID, limit)
 	if err != nil {
@@ -247,11 +264,110 @@ func (r *ProgressRepository) GetNewNames(ctx context.Context, userID int64, limi
 		nameNumbers = append(nameNumbers, num)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate new names: %w", err)
+	return nameNumbers, rows.Err()
+}
+
+// GetRandomReinforcementNames retrieves random learned names for reinforcement.
+func (r *ProgressRepository) GetRandomReinforcementNames(ctx context.Context, userID int64, limit int) ([]int, error) {
+	query := `
+		SELECT name_number
+		FROM user_progress
+		WHERE user_id = $1
+		  AND phase IN ('learning', 'mastered')
+		  AND review_count > 0
+		ORDER BY RANDOM()
+		LIMIT $2
+	`
+
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get random reinforcement names: %w", err)
+	}
+	defer rows.Close()
+
+	nameNumbers := make([]int, 0, limit)
+	for rows.Next() {
+		var num int
+		if err := rows.Scan(&num); err != nil {
+			return nil, fmt.Errorf("scan reinforcement name: %w", err)
+		}
+		nameNumbers = append(nameNumbers, num)
 	}
 
-	return nameNumbers, nil
+	return nameNumbers, rows.Err()
+}
+
+// MarkAsIntroduced marks a name as introduced to the user (first time viewing).
+func (r *ProgressRepository) MarkAsIntroduced(ctx context.Context, userID int64, nameNumber int) error {
+	now := time.Now()
+	nextReview := now.Add(24 * time.Hour)
+
+	query := `
+		INSERT INTO user_progress (
+			user_id, name_number, phase, ease, streak, interval_days,
+			next_review_at, review_count, correct_count, 
+			first_seen_at, last_reviewed_at, introduced_at, created_at, updated_at
+		)
+		VALUES ($1, $2, 'new', 2.5, 0, 1, $3, 0, 0, $4, $4, NULL, $4, $4)
+		ON CONFLICT (user_id, name_number) DO NOTHING
+	`
+
+	_, err := r.db.Exec(ctx, query, userID, nameNumber, nextReview, now)
+	if err != nil {
+		return fmt.Errorf("mark as introduced: %w", err)
+	}
+
+	return nil
+}
+
+// GetIntroducedTodayCount returns the count of names introduced today.
+func (r *ProgressRepository) GetIntroducedTodayCount(ctx context.Context, userID int64, dateUTC time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM user_progress
+		WHERE user_id = $1
+		  AND introduced_at IS NOT NULL
+		  AND DATE(introduced_at) = DATE($2)
+	`
+
+	var count int
+	err := r.db.QueryRow(ctx, query, userID, dateUTC).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("get introduced today count: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetIntroducedButNotReviewed retrieves names shown via reminders but not yet quizzed.
+func (r *ProgressRepository) GetIntroducedButNotReviewed(ctx context.Context, userID int64, limit int) ([]int, error) {
+	query := `
+		SELECT name_number
+		FROM user_progress
+		WHERE user_id = $1
+		  AND phase = 'new'
+		  AND review_count = 0
+		  AND first_seen_at IS NOT NULL
+		ORDER BY first_seen_at
+		LIMIT $2
+	`
+
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get introduced but not reviewed: %w", err)
+	}
+	defer rows.Close()
+
+	var names []int
+	for rows.Next() {
+		var nameNumber int
+		if err := rows.Scan(&nameNumber); err != nil {
+			return nil, fmt.Errorf("scan name number: %w", err)
+		}
+		names = append(names, nameNumber)
+	}
+
+	return names, rows.Err()
 }
 
 // ProgressStats contains user progress statistics for /progress command.
@@ -276,31 +392,30 @@ func (r *ProgressRepository) GetStats(ctx context.Context, userID int64) (*Progr
 	query := `
 		SELECT
 			COUNT(*) as total_viewed,
-			COUNT(*) FILTER (WHERE is_learned = true) as learned,
-			COUNT(*) FILTER (WHERE is_learned = false) as in_progress,
-			COALESCE(AVG(correct_count) FILTER (WHERE is_learned = true), 0) as avg_correct,
-			MAX(last_reviewed_at) as last_activity,
 			COUNT(*) FILTER (WHERE phase = 'new') as new_count,
 			COUNT(*) FILTER (WHERE phase = 'learning') as learning_count,
 			COUNT(*) FILTER (WHERE phase = 'mastered') as mastered_count,
 			COUNT(*) FILTER (WHERE next_review_at IS NOT NULL AND next_review_at <= NOW()) as due_today,
+			CASE
+				WHEN SUM(review_count) > 0 THEN
+					LEAST(100, (SUM(correct_count)::float / SUM(review_count)::float) * 100)
+				ELSE 0
+			END as accuracy,
+			MAX(last_reviewed_at) as last_activity,
 			COALESCE(AVG(ease), 2.5) as avg_ease
 		FROM user_progress
 		WHERE user_id = $1
 	`
 
 	var stats ProgressStats
-	var lastActivity *time.Time
 	err := r.db.QueryRow(ctx, query, userID).Scan(
 		&stats.TotalViewed,
-		&stats.Learned,
-		&stats.InProgress,
-		&stats.Accuracy,
-		&lastActivity,
 		&stats.NewCount,
 		&stats.LearningCount,
 		&stats.MasteredCount,
 		&stats.DueToday,
+		&stats.Accuracy,
+		&stats.LastActivityAt,
 		&stats.AverageEase,
 	)
 
@@ -308,30 +423,34 @@ func (r *ProgressRepository) GetStats(ctx context.Context, userID int64) (*Progr
 		return nil, fmt.Errorf("get stats: %w", err)
 	}
 
+	stats.Learned = stats.MasteredCount
+	stats.InProgress = stats.NewCount + stats.LearningCount
 	stats.NotStarted = 99 - stats.TotalViewed
-	stats.LastActivityAt = lastActivity
+
+	if stats.Accuracy > 100 {
+		stats.Accuracy = 100
+	}
+
 	return &stats, nil
 }
 
-// GetNextDueName retrieves the next name due for review for a user.
-// Returns 0 if no names are due.
+// GetNextDueName retrieves the next name due for review.
 func (r *ProgressRepository) GetNextDueName(ctx context.Context, userID int64) (int, error) {
 	query := `
-        SELECT name_number
-        FROM user_progress
-        WHERE user_id = $1 
-          AND next_review_at IS NOT NULL 
-          AND next_review_at <= NOW()
-        ORDER BY next_review_at
-        LIMIT 1
-    `
+		SELECT name_number
+		FROM user_progress
+		WHERE user_id = $1
+		  AND next_review_at IS NOT NULL
+		  AND next_review_at <= NOW()
+		ORDER BY next_review_at
+		LIMIT 1
+	`
 
 	var nameNumber int
 	err := r.db.QueryRow(ctx, query, userID).Scan(&nameNumber)
-
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil // нет due имён
+			return 0, nil // No names due
 		}
 		return 0, fmt.Errorf("get next due name: %w", err)
 	}
@@ -339,158 +458,18 @@ func (r *ProgressRepository) GetNextDueName(ctx context.Context, userID int64) (
 	return nameNumber, nil
 }
 
-// GetOrCreateDailyName retrieves or creates a daily name for a user.
-// If no daily name exists for the date, assigns a new one.
-func (r *ProgressRepository) GetOrCreateDailyName(
-	ctx context.Context,
-	userID int64,
-	dateUTC time.Time,
-	namesPerDay int,
-) (int, error) {
-	if namesPerDay < 1 {
-		namesPerDay = 1
-	}
-
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
-
-	queryGet := `
-        SELECT name_number 
-        FROM user_daily_name 
-        WHERE user_id = $1 AND date_utc = $2
-        ORDER BY slot_index
-        FOR UPDATE
-    `
-
-	rows, err := tx.Query(ctx, queryGet, userID, dateUTC.Format("2006-01-02"))
-	if err != nil {
-		return 0, fmt.Errorf("check daily names: %w", err)
-	}
-
-	var existingNumbers []int
-	for rows.Next() {
-		var num int
-		if err := rows.Scan(&num); err != nil {
-			rows.Close()
-			return 0, fmt.Errorf("scan daily name: %w", err)
-		}
-		existingNumbers = append(existingNumbers, num)
-	}
-	rows.Close()
-
-	if len(existingNumbers) > 0 {
-		if err := tx.Commit(ctx); err != nil {
-			return 0, fmt.Errorf("commit transaction: %w", err)
-		}
-		return existingNumbers[0], nil
-	}
-
-	queryNew := `
-        SELECT n.number
-        FROM generate_series(1, 99) AS n(number)
-        WHERE NOT EXISTS (
-            SELECT 1 FROM user_progress up 
-            WHERE up.user_id = $1 AND up.name_number = n.number
-        )
-        ORDER BY n.number
-        LIMIT $2
-    `
-
-	rows, err = tx.Query(ctx, queryNew, userID, namesPerDay)
-	if err != nil {
-		return 0, fmt.Errorf("get new names for daily: %w", err)
-	}
-
-	var newNumbers []int
-	for rows.Next() {
-		var num int
-		if err := rows.Scan(&num); err != nil {
-			rows.Close()
-			return 0, fmt.Errorf("scan new name: %w", err)
-		}
-		newNumbers = append(newNumbers, num)
-	}
-	rows.Close()
-
-	if len(newNumbers) == 0 {
-		if err := tx.Commit(ctx); err != nil {
-			return 0, fmt.Errorf("commit transaction: %w", err)
-		}
-		return 0, nil
-	}
-
-	queryInsert := `
-        INSERT INTO user_daily_name (user_id, date_utc, name_number, slot_index, created_at)
-        VALUES ($1, $2, $3, $4, NOW())
-        ON CONFLICT (user_id, date_utc, slot_index) DO NOTHING
-    `
-
-	for i, num := range newNumbers {
-		_, err = tx.Exec(ctx, queryInsert, userID, dateUTC.Format("2006-01-02"), num, i)
-		if err != nil {
-			return 0, fmt.Errorf("save daily name: %w", err)
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return newNumbers[0], nil
-}
-
-// GetNextDailyName retrieves the next daily name for review for a user on a specific date.
-// Returns 0 if no daily names are available.
-func (r *ProgressRepository) GetNextDailyName(
-	ctx context.Context,
-	userID int64,
-	dateUTC time.Time,
-) (int, error) {
-	query := `
-        SELECT udn.name_number
-        FROM user_daily_name udn
-        LEFT JOIN user_progress up 
-            ON up.user_id = udn.user_id 
-            AND up.name_number = udn.name_number
-        WHERE udn.user_id = $1 
-          AND udn.date_utc = $2
-          AND (up.last_reviewed_at IS NULL OR up.last_reviewed_at < udn.created_at)
-        ORDER BY udn.slot_index
-        LIMIT 1
-    `
-
-	var nameNumber int
-	err := r.db.QueryRow(ctx, query, userID, dateUTC.Format("2006-01-02")).Scan(&nameNumber)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("get next daily name: %w", err)
-	}
-
-	return nameNumber, nil
-}
-
-// GetRandomLearnedName retrieves a random learned name for a user.
-// Returns 0 if no names are learned.
+// GetRandomLearnedName retrieves a random learned name.
 func (r *ProgressRepository) GetRandomLearnedName(ctx context.Context, userID int64) (int, error) {
 	query := `
-        SELECT name_number
-        FROM user_progress
-        WHERE user_id = $1
-        ORDER BY RANDOM()
-        LIMIT 1
-    `
+		SELECT name_number
+		FROM user_progress
+		WHERE user_id = $1
+		ORDER BY RANDOM()
+		LIMIT 1
+	`
 
 	var nameNumber int
 	err := r.db.QueryRow(ctx, query, userID).Scan(&nameNumber)
-
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
@@ -499,4 +478,66 @@ func (r *ProgressRepository) GetRandomLearnedName(ctx context.Context, userID in
 	}
 
 	return nameNumber, nil
+}
+
+// TODO: удалить все ниже, если не используются
+
+// GetByUserID retrieves all progress records for a given user.
+func (r *ProgressRepository) GetByUserID(ctx context.Context, userID int64) ([]*entities.UserProgress, error) {
+	query := `
+    	SELECT user_id, name_number, last_reviewed_at, correct_count,
+    	       phase, ease, streak, interval_days, next_review_at, review_count, first_seen_at
+    	FROM user_progress
+    	WHERE user_id = $1
+    `
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get by user id: %w", err)
+	}
+	defer rows.Close()
+
+	var progress []*entities.UserProgress
+	for rows.Next() {
+		var p entities.UserProgress
+		var phase string
+		err = rows.Scan(
+			&p.UserID,
+			&p.NameNumber,
+			&p.LastReviewedAt,
+			&p.CorrectCount,
+			&phase,
+			&p.Ease,
+			&p.Streak,
+			&p.IntervalDays,
+			&p.NextReviewAt,
+			&p.ReviewCount,
+			&p.FirstSeenAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		p.Phase = entities.Phase(phase)
+		progress = append(progress, &p)
+	}
+
+	return progress, rows.Err()
+}
+
+// MarkAsViewed creates a progress record when user views a name via it's number.
+// Does nothing if record already exists.
+func (r *ProgressRepository) MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error {
+	query := `
+    	INSERT INTO user_progress (user_id, name_number, phase)
+    	VALUES ($1, $2, 'new')
+    	ON CONFLICT (user_id, name_number) DO NOTHING
+    `
+
+	_, err := r.db.Exec(ctx, query, userID, nameNumber)
+	if err != nil {
+		return fmt.Errorf("mark as viewed: %w", err)
+	}
+
+	return nil
 }

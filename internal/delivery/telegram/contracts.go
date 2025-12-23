@@ -1,5 +1,3 @@
-// contracts.go defines interfaces for dependencies used in the Telegram handler.
-
 package telegram
 
 import (
@@ -24,9 +22,9 @@ type NameService interface {
 
 // ProgressService interface for progress-related operations.
 type ProgressService interface {
-	GetProgressSummary(ctx context.Context, userID int64, namesPerDay int) (*service.ProgressSummary, error)
-	MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error
-	RecordReviewSRS(ctx context.Context, userID int64, nameNumber int, quality entities.AnswerQuality) error
+	GetProgressSummary(ctx context.Context, userID int64) (*service.ProgressSummary, error)
+	IntroduceName(ctx context.Context, userID int64, nameNumber int) error
+	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 }
 
 // SettingsService interface for settings-related operations.
@@ -34,18 +32,21 @@ type SettingsService interface {
 	GetOrCreate(ctx context.Context, userID int64) (*entities.UserSettings, error)
 	UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error
 	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
+	UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error
 }
 
 // QuizService interface for quiz-related operations.
 type QuizService interface {
-	GenerateQuiz(ctx context.Context, userID int64, mode string) (*entities.QuizSession, []entities.Question, error)
-	GetSession(ctx context.Context, sessionID int64) (*entities.QuizSession, error)
-	CheckAndSaveAnswer(ctx context.Context, userID int64, session *entities.QuizSession, q *entities.Question, selectedIndex int) (*entities.QuizAnswer, error)
+	GetActiveSession(ctx context.Context, userID int64) (*entities.QuizSession, error)
+	GetCurrentQuestion(ctx context.Context, sessionID int64, questionNum int) (*entities.QuizQuestion, *entities.Name, error)
+	StartQuizSession(ctx context.Context, userID int64, totalQuestions int) (*entities.QuizSession, []entities.Name, error)
+	SubmitAnswer(ctx context.Context, sessionID int64, userID int64, selectedOption string) (*service.AnswerResult, error)
 }
 
 // ReminderService interface for reminder-related operations.
 type ReminderService interface {
 	GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error)
+	GetOrCreate(ctx context.Context, userID int64) (*entities.UserReminders, error)
 	ToggleReminder(ctx context.Context, userID int64) error
 	SetReminderIntervalHours(ctx context.Context, userID int64, intervalHours int) error
 	SetReminderTimeWindow(ctx context.Context, userID int64, startTime, endTime string) error
@@ -53,9 +54,19 @@ type ReminderService interface {
 	DisableReminder(ctx context.Context, userID int64) error
 }
 
+type DailyNameService interface {
+	GetTodayNames(ctx context.Context, userID int64) ([]int, error)
+	GetTodayNamesCount(ctx context.Context, userID int64) (int, error)
+	AddTodayName(ctx context.Context, userID int64, nameNumber int) error
+	RemoveTodayName(ctx context.Context, userID int64, nameNumber int) error
+}
+
 // QuizStorage interface for quiz session storage.
 type QuizStorage interface {
-	Store(sessionID int64, questions []entities.Question)
-	Get(sessionID int64) []entities.Question
+	Store(sessionID int64, names []entities.Name)
+	Get(sessionID int64) []entities.Name
 	Delete(sessionID int64)
+	StoreMessageID(sessionID int64, messageID int)
+	GetMessageID(sessionID int64) (int, bool)
+	DeleteMessageID(sessionID int64)
 }

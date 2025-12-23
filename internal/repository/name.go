@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,61 +11,91 @@ import (
 )
 
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrRepositoryEmpty = errors.New("repository empty")
+	ErrNameNotFound  = errors.New("name not found")
+	ErrInvalidNumber = errors.New("invalid name number")
 )
 
-// namesWrapper is a helper struct for JSON unmarshaling.
-type namesWrapper struct {
-	Names []*entities.Name `json:"names"`
-}
-
-// NameRepository stores and manages the collection of Allah's names.
+// NameRepository provides access to the 99 Names of Allah.
+// This implementation uses an in-memory dataset, but you could load from DB or JSON.
 type NameRepository struct {
 	names []*entities.Name
 }
 
-// NewNameRepository creates a new NameRepository from a JSON file.
-// It reads the file, unmarshals the names, and ensures there are exactly 99 names.
+// NewNameRepository creates a new NameRepository with the 99 Names.
 func NewNameRepository(path string) (*NameRepository, error) {
+	names, err := get99Names(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &NameRepository{
+		names: names,
+	}, nil
+}
+
+// GetByNumber returns the name with the specified number.
+// If the number is out of range, it returns ErrNotFound.
+// GetByNumber retrieves a name by its number (1-99).
+func (r *NameRepository) GetByNumber(number int) (*entities.Name, error) {
+	if number < 1 || number > 99 {
+		return nil, ErrInvalidNumber
+	}
+
+	for _, name := range r.names {
+		if name.Number == number {
+			return name, nil
+		}
+	}
+
+	return nil, ErrNameNotFound
+}
+
+// GetRandom retrieves a random name.
+func (r *NameRepository) GetRandom() (*entities.Name, error) {
+	if len(r.names) == 0 {
+		return nil, ErrNameNotFound
+	}
+
+	idx := rand.Intn(len(r.names))
+	return r.names[idx], nil
+}
+
+// GetAll retrieves all 99 names.
+func (r *NameRepository) GetAll() ([]*entities.Name, error) {
+	return r.names, nil
+}
+
+// GetByNumbers retrieves multiple names by their numbers.
+func (r *NameRepository) GetByNumbers(numbers []int) ([]entities.Name, error) {
+	result := make([]entities.Name, 0, len(numbers))
+
+	for _, num := range numbers {
+		name, err := r.GetByNumber(num)
+		if err != nil {
+			return nil, fmt.Errorf("get name %d: %w", num, err)
+		}
+		result = append(result, *name)
+	}
+
+	return result, nil
+}
+
+func get99Names(path string) ([]*entities.Name, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var wrapper namesWrapper
+	var wrapper struct {
+		Names []*entities.Name `json:"names"`
+	}
 	if err = json.Unmarshal(data, &wrapper); err != nil {
-		return nil, err
-	}
-	names := wrapper.Names
-
-	if len(names) != 99 {
-		return nil, fmt.Errorf("expected 99 names, got %d", len(names))
+		return nil, fmt.Errorf("failed to unmarshal names JSON: %w", err)
 	}
 
-	return &NameRepository{names: names}, nil
-}
-
-// GetByNumber returns the name with the specified number.
-// If the number is out of range, it returns ErrNotFound.
-func (r *NameRepository) GetByNumber(_ context.Context, number int) (*entities.Name, error) {
-	if number < 1 || number > len(r.names) {
-		return nil, ErrNotFound
+	if len(wrapper.Names) != 99 {
+		return nil, fmt.Errorf("expected 99 names, got %d", len(wrapper.Names))
 	}
-	return r.names[number-1], nil
-}
 
-// GetRandom returns a random name from the repository.
-// If the repository is empty, it returns ErrRepositoryEmpty.
-func (r *NameRepository) GetRandom(_ context.Context) (*entities.Name, error) {
-	if len(r.names) == 0 {
-		return nil, ErrRepositoryEmpty
-	}
-	idx := rand.Intn(len(r.names))
-	return r.names[idx], nil
-}
-
-// GetAll returns all names stored in the repository.
-func (r *NameRepository) GetAll(_ context.Context) ([]*entities.Name, error) {
-	return r.names, nil
+	return wrapper.Names, nil
 }

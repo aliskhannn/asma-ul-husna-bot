@@ -14,15 +14,16 @@ import (
 
 // Handler is responsible for processing Telegram updates and callbacks.
 type Handler struct {
-	bot             *tgbotapi.BotAPI
-	logger          *zap.Logger
-	nameService     NameService
-	userService     UserService
-	progressService ProgressService
-	settingsService SettingsService
-	quizService     QuizService
-	quizStorage     QuizStorage
-	reminderService ReminderService
+	bot              *tgbotapi.BotAPI
+	logger           *zap.Logger
+	nameService      NameService
+	userService      UserService
+	progressService  ProgressService
+	settingsService  SettingsService
+	quizService      QuizService
+	quizStorage      QuizStorage
+	reminderService  ReminderService
+	dailyNameService DailyNameService
 }
 
 // NewHandler creates a new Telegram handler with dependencies.
@@ -36,17 +37,19 @@ func NewHandler(
 	quizService QuizService,
 	quizStorage QuizStorage,
 	reminderService ReminderService,
+	dailyNameService DailyNameService,
 ) *Handler {
 	return &Handler{
-		bot:             bot,
-		logger:          logger,
-		nameService:     nameService,
-		userService:     userService,
-		progressService: progressService,
-		settingsService: settingsService,
-		quizService:     quizService,
-		quizStorage:     quizStorage,
-		reminderService: reminderService,
+		bot:              bot,
+		logger:           logger,
+		nameService:      nameService,
+		userService:      userService,
+		progressService:  progressService,
+		settingsService:  settingsService,
+		quizService:      quizService,
+		quizStorage:      quizStorage,
+		reminderService:  reminderService,
+		dailyNameService: dailyNameService,
 	}
 }
 
@@ -105,39 +108,42 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	chatID := update.Message.Chat.ID
+	messageID := update.Message.MessageID
+	cmdArgs := update.Message.CommandArguments()
 
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
-			msg := newMessage(chatID, WelcomeMarkdownV2())
+			msg := newMessage(chatID, welcomeMessage())
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send start message",
 					zap.Error(err),
 				)
 			}
 
+		case "next":
+			_ = h.withErrorHandling(h.handleNext(from.ID, messageID))(ctx, chatID)
+
 		case "random":
-			_ = h.withErrorHandling(h.handleRandom(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleRandom(from.ID, messageID))(ctx, chatID)
 
 		case "all":
-			_ = h.withErrorHandling(func(ctx context.Context, chatID int64) error {
-				return h.handleAll(ctx, chatID)
-			})(ctx, chatID)
+			_ = h.withErrorHandling(h.handleAll(messageID))(ctx, chatID)
 
 		case "range":
-			_ = h.withErrorHandling(h.handleRange(update.Message.CommandArguments()))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleRange(cmdArgs, messageID))(ctx, chatID)
 
 		case "progress":
-			_ = h.withErrorHandling(h.handleProgress(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleProgress(from.ID, messageID))(ctx, chatID)
 
 		case "quiz":
-			_ = h.withErrorHandling(h.handleQuiz(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleQuiz(from.ID, update.Message.MessageID))(ctx, chatID)
 
 		case "settings":
-			_ = h.withErrorHandling(h.handleSettings(from.ID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleSettings(from.ID, messageID))(ctx, chatID)
 
 		case "help":
-			msg := newPlainMessage(chatID, helpTMessage)
+			msg := newPlainMessage(chatID, helpMessage())
 			if err := h.send(msg); err != nil {
 				h.logger.Error("failed to send help message",
 					zap.Error(err),
@@ -156,7 +162,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	_ = h.withErrorHandling(h.handleNumber(update.Message.Text, from.ID))(ctx, chatID)
+	_ = h.withErrorHandling(h.handleNumber(update.Message.Text))(ctx, chatID)
 }
 
 // send sends a Telegram message and ignores "message is not modified" errors.
@@ -171,37 +177,6 @@ func (h *Handler) send(c tgbotapi.Chattable) error {
 	return nil
 }
 
-// getCurrentQuestion retrieves the current quiz question by session and question number.
-func (h *Handler) getCurrentQuestion(sessionID int64, currentNum int) (*entities.Question, bool) {
-	questions := h.quizStorage.Get(sessionID)
-	if len(questions) == 0 {
-		return nil, false
-	}
-
-	idx := currentNum - 1
-	if idx < 0 || idx >= len(questions) {
-		return nil, false
-	}
-
-	return &questions[idx], true
-}
-
-// sendQuizQuestion sends a quiz question with answer buttons.
-func (h *Handler) sendQuizQuestion(
-	chatID int64,
-	session *entities.QuizSession,
-	question *entities.Question,
-	currentNum int,
-) error {
-	questionText := formatQuizQuestion(question, currentNum, session.TotalQuestions)
-	keyboard := buildQuizAnswerKeyboard(question, session.ID, currentNum)
-
-	msg := newMessage(chatID, questionText)
-	msg.ReplyMarkup = keyboard
-
-	return h.send(msg)
-}
-
 // sendQuizResults sends quiz results with a keyboard.
 func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) error {
 	resultText := formatQuizResult(session)
@@ -214,14 +189,31 @@ func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) e
 	return err
 }
 
-// storeQuizQuestions stores quiz questions in storage.
-func (h *Handler) storeQuizQuestions(sessionID int64, questions []entities.Question) {
-	h.quizStorage.Store(sessionID, questions)
-}
+// sendQuizQuestionFromDB sends a quiz question from database with answer buttons.
+func (h *Handler) sendQuizQuestionFromDB(
+	chatID int64,
+	session *entities.QuizSession,
+	question *entities.QuizQuestion,
+	name *entities.Name,
+	currentNum int,
+) error {
+	// Build question text
+	questionText := buildQuizQuestionText(question, name, currentNum, session.TotalQuestions)
 
-// getQuizQuestions retrieves quiz questions from storage.
-func (h *Handler) getQuizQuestions(sessionID int64) []entities.Question {
-	return h.quizStorage.Get(sessionID)
+	// Build keyboard with options
+	keyboard := buildQuizAnswerKeyboard(session.ID, currentNum, question.Options)
+
+	msg := newMessage(chatID, questionText)
+	msg.ReplyMarkup = keyboard
+
+	sentMsg, err := h.bot.Send(msg)
+	if err != nil {
+		return err
+	}
+
+	h.quizStorage.StoreMessageID(session.ID, sentMsg.MessageID)
+
+	return nil
 }
 
 // SendReminder sends a reminder notification to user
