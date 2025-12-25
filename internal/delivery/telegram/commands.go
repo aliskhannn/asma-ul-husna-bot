@@ -48,11 +48,11 @@ func (h *Handler) handleNumber(numStr string) HandlerFunc {
 	}
 }
 
-// handleNext shows today's names or introduces a new one if quota allows.
-func (h *Handler) handleNext(userID int64, messageID int) HandlerFunc {
+// handleNext shows one name in phase new introduced today.
+func (h *Handler) handleNext(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
-		if err != nil {
+		if err != nil || settings == nil {
 			settings = entities.NewUserSettings(userID)
 		}
 
@@ -61,158 +61,271 @@ func (h *Handler) handleNext(userID int64, messageID int) HandlerFunc {
 			namesPerDay = 1
 		}
 
-		// Get today's introduced names
+		// 1) Guided debt first
+		if settings.LearningMode == string(entities.ModeGuided) {
+			hasDebt, err := h.dailyNameService.HasUnfinishedDays(ctx, userID)
+			if err != nil {
+				h.logger.Error("failed to check unfinished days", zap.Error(err))
+				return h.send(newPlainMessage(chatID, msgNameUnavailable))
+			}
+			if hasDebt {
+				n, err := h.dailyNameService.GetOldestUnfinishedName(ctx, userID)
+				if err != nil {
+					h.logger.Error("failed to get oldest unfinished name", zap.Error(err))
+					return h.send(newPlainMessage(chatID, msgNameUnavailable))
+				}
+				return h.sendNameCard(ctx, chatID, 0, n)
+			}
+		}
+
+		// 2) today plan
 		todayNames, err := h.dailyNameService.GetTodayNames(ctx, userID)
 		if err != nil {
 			h.logger.Error("failed to get today names", zap.Error(err))
-			msg := newPlainMessage(chatID, msgNameUnavailable)
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
+		}
+
+		// 3) empty => introduce (if quota allows)
+		if len(todayNames) == 0 {
+			return h.introduceOne(ctx, userID, chatID)
+		}
+
+		dec, err := h.decideToday(ctx, userID, todayNames)
+		if err != nil {
+			h.logger.Error("failed to decide today state", zap.Error(err))
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
+		}
+
+		planFull := len(todayNames) >= namesPerDay
+
+		if dec.State == TodayHasNew || dec.HasNew {
+			return h.sendNameCard(ctx, chatID, 0, dec.NewToShow)
+		}
+
+		if !planFull {
+			return h.introduceOne(ctx, userID, chatID)
+		}
+
+		if planFull && dec.HasLearning {
+			msg := newPlainMessage(chatID,
+				fmt.Sprintf("📚 Сегодня вы уже изучаете %d имя(ён).\n\n"+
+					"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
+					"💡 Или увеличьте лимит в /settings → Имён в день",
+					namesPerDay))
 			return h.send(msg)
 		}
 
-		var name *entities.Name
+		switch dec.State {
+		case TodayHasNew:
+			return h.sendNameCard(ctx, chatID, 0, dec.NewToShow)
 
-		// If we have names for today, show one of them
-		if len(todayNames) > 0 {
-			// Show the first name from today's list
-			name, err = h.nameService.GetByNumber(ctx, todayNames[0])
-			if err != nil {
-				h.logger.Error("failed to get name by number", zap.Error(err))
-				msg := newPlainMessage(chatID, msgNameUnavailable)
-				return h.send(msg)
+		case TodayAllLearning:
+			msg := newPlainMessage(chatID,
+				fmt.Sprintf("📚 Сегодня вы уже изучаете %d имя(ён).\n\n"+
+					"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
+					"💡 Или увеличьте лимит в /settings → Имён в день",
+					namesPerDay))
+			return h.send(msg)
+
+		case TodayMixed:
+			if n, ok := h.chooseFirstNotMastered(ctx, userID, todayNames); ok {
+				return h.sendNameCard(ctx, chatID, 0, n)
+			}
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
+
+		case TodayAllMastered:
+			if len(todayNames) < namesPerDay {
+				return h.introduceOne(ctx, userID, chatID)
 			}
 
-			h.logger.Info("showing today's name",
-				zap.Int64("user_id", userID),
-				zap.Int("name_number", name.Number),
-				zap.Int("today_count", len(todayNames)),
-				zap.Int("names_per_day", namesPerDay),
-			)
-		} else {
-			// No names for today, check if we can introduce a new one
-			todayCount := len(todayNames)
-			if todayCount >= namesPerDay {
-				msg := newPlainMessage(chatID,
-					fmt.Sprintf("📚 Сегодня вы уже изучаете %d имя(ён).\n\n"+
-						"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
-						"💡 Или увеличьте лимит в /settings → Имён в день",
-						namesPerDay))
-				return h.send(msg)
-			}
+			msg := newPlainMessage(chatID,
+				fmt.Sprintf("✅ Сегодняшний план выполнен (%d/%d).\n\n"+
+					"Чтобы открыть новые имена:\n"+
+					"• Увеличьте «имён в день» в /settings\n"+
+					"• Или дождитесь следующего дня",
+					len(todayNames), namesPerDay))
+			return h.send(msg)
 
-			// Get next name for introduction
-			nameNumbers, err := h.progressService.GetNewNames(ctx, userID, 1)
-			if err != nil {
-				h.logger.Error("failed to get new names", zap.Error(err))
-				msg := newPlainMessage(chatID, msgNameUnavailable)
-				return h.send(msg)
-			}
-
-			if len(nameNumbers) == 0 {
-				msg := newPlainMessage(chatID, "🎉 Вы уже начали изучение всех 99 имён!\n\nИспользуйте /quiz для повторения.")
-				return h.send(msg)
-			}
-
-			name, err = h.nameService.GetByNumber(ctx, nameNumbers[0])
-			if err != nil {
-				h.logger.Error("failed to get name by number", zap.Error(err))
-				msg := newPlainMessage(chatID, msgNameUnavailable)
-				return h.send(msg)
-			}
-
-			// Mark as introduced in progress
-			if err = h.progressService.IntroduceName(ctx, userID, name.Number); err != nil {
-				h.logger.Error("failed to mark name as introduced", zap.Error(err))
-				msg := newPlainMessage(chatID, "❌ Ошибка при сохранении прогресса")
-				return h.send(msg)
-			}
-
-			// Add to today's names
-			if err = h.dailyNameService.AddTodayName(ctx, userID, name.Number); err != nil {
-				h.logger.Error("failed to add today name", zap.Error(err))
-			}
-
-			h.logger.Info("introduced new name",
-				zap.Int64("user_id", userID),
-				zap.Int("name_number", name.Number),
-				zap.Int("today_count", todayCount+1),
-				zap.Int("names_per_day", namesPerDay),
-			)
+		default:
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 		}
-
-		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
-			return h.nameService.GetByNumber(ctx, name.Number)
-		}, chatID)
-		if err != nil {
-			return err
-		}
-
-		// Delete the /next command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
-
-		if err = h.send(msg); err != nil {
-			return err
-		}
-
-		if audio != nil {
-			_ = h.send(*audio)
-		}
-
-		return nil
 	}
 }
 
+// introduceOne introduces one new name and adds it to today's plan.
+func (h *Handler) introduceOne(ctx context.Context, userID, chatID int64) error {
+	newNums, err := h.progressService.GetNewNames(ctx, userID, 1)
+	if err != nil {
+		h.logger.Error("failed to get new names", zap.Error(err))
+		return h.send(newPlainMessage(chatID, msgNameUnavailable))
+	}
+	if len(newNums) == 0 {
+		return h.send(newPlainMessage(chatID,
+			"🎉 Вы уже начали изучение всех 99 имён!\n\nИспользуйте /quiz для повторения."))
+	}
+
+	newNum := newNums[0]
+
+	if err := h.progressService.IntroduceName(ctx, userID, newNum); err != nil {
+		h.logger.Error("failed to mark name as introduced", zap.Error(err))
+		return h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении прогресса"))
+	}
+	if err := h.dailyNameService.AddTodayName(ctx, userID, newNum); err != nil {
+		h.logger.Error("failed to add today name", zap.Error(err))
+		return h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении дневного плана"))
+	}
+
+	return h.sendNameCard(ctx, chatID, 0, newNum)
+}
+
+type TodayState int
+
+const (
+	TodayEmpty TodayState = iota
+	TodayAllLearning
+	TodayHasNew
+	TodayAllMastered
+	TodayMixed
+)
+
+type TodayDecision struct {
+	State       TodayState
+	NewToShow   int // nameNumber if State == TodayHasNew
+	HasLearning bool
+	HasNew      bool
+	AllMastered bool
+}
+
+func (h *Handler) decideToday(ctx context.Context, userID int64, todayNames []int) (TodayDecision, error) {
+	if len(todayNames) == 0 {
+		return TodayDecision{State: TodayEmpty}, nil
+	}
+
+	m, err := h.progressService.GetByNumbers(ctx, userID, todayNames)
+	if err != nil {
+		return TodayDecision{}, err
+	}
+
+	dec := TodayDecision{
+		State:       TodayMixed,
+		NewToShow:   0,
+		HasLearning: false,
+		HasNew:      false,
+		AllMastered: true,
+	}
+
+	allLearning := true
+
+	for _, num := range todayNames {
+		p, ok := m[num]
+		phase := string(entities.PhaseNew)
+		if ok && p != nil {
+			phase = string(p.Phase)
+		}
+
+		if phase == string(entities.PhaseNew) && !dec.HasNew {
+			dec.HasNew = true
+			dec.NewToShow = num
+		}
+		if phase == string(entities.PhaseLearning) {
+			dec.HasLearning = true
+		}
+
+		if phase != string(entities.PhaseMastered) {
+			dec.AllMastered = false
+		}
+		if phase != string(entities.PhaseLearning) {
+			allLearning = false
+		}
+	}
+
+	switch {
+	case dec.HasNew:
+		dec.State = TodayHasNew
+	case dec.AllMastered:
+		dec.State = TodayAllMastered
+	case allLearning:
+		dec.State = TodayAllLearning
+	default:
+		dec.State = TodayMixed
+	}
+
+	return dec, nil
+}
+
 // handleToday shows all names introduced today.
-func (h *Handler) handleToday(userID int64, messageID int) HandlerFunc {
+func (h *Handler) handleToday(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
-		if err != nil {
+		if err != nil || settings == nil {
 			settings = entities.NewUserSettings(userID)
+		}
+
+		namesPerDay := settings.NamesPerDay
+		if namesPerDay <= 0 {
+			namesPerDay = 1
 		}
 
 		todayNames, err := h.dailyNameService.GetTodayNames(ctx, userID)
 		if err != nil {
 			h.logger.Error("failed to get today names", zap.Error(err))
-			msg := newPlainMessage(chatID, "❌ Ошибка загрузки списка")
-			return h.send(msg)
+			return h.send(newPlainMessage(chatID, "❌ Ошибка загрузки списка"))
 		}
 
+		// Empty today plan
 		if len(todayNames) == 0 {
 			msg := newPlainMessage(chatID,
 				fmt.Sprintf("📚 Сегодня ещё не начали изучение.\n\n"+
 					"💡 Используйте /next чтобы начать! (лимит: %d в день)",
-					settings.NamesPerDay))
+					namesPerDay))
 			return h.send(msg)
 		}
 
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("📚 *Сегодня изучаете \\(%d/%d\\):*\n\n",
-			len(todayNames), settings.NamesPerDay))
-
-		for i, nameNumber := range todayNames {
-			name, err := h.nameService.GetByNumber(ctx, nameNumber)
-			if err != nil {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("%d️⃣ %s\n", i+1, name.Translation))
-		}
-
-		if len(todayNames) < settings.NamesPerDay {
-			sb.WriteString(fmt.Sprintf("\n✅ *%d/%d* — пройдите /quiz чтобы разблокировать следующие\\!",
-				len(todayNames), settings.NamesPerDay))
-		}
-
-		// Delete the /today command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
-
-		msg := newMessage(chatID, sb.String())
-		return h.send(msg)
+		// Build the list with learning status
+		return h.sendTodayList(ctx, chatID, userID, settings, todayNames)
 	}
 }
 
+func (h *Handler) chooseFirstUnfinished(ctx context.Context, userID int64, nums []int) (int, bool) {
+	for _, n := range nums {
+		streak, err := h.progressService.GetStreak(ctx, userID, n)
+		if err != nil {
+			return n, true
+		}
+		if streak < 7 {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+func (h *Handler) chooseFirstNotMastered(ctx context.Context, userID int64, todayNames []int) (int, bool) {
+	if len(todayNames) == 0 {
+		return 0, false
+	}
+
+	m, err := h.progressService.GetByNumbers(ctx, userID, todayNames)
+	if err != nil {
+		h.logger.Warn("failed to load progress for today names", zap.Error(err))
+		return 0, false
+	}
+
+	for _, num := range todayNames {
+		p, ok := m[num]
+		if !ok || p == nil {
+			// нет записи прогресса => считаем что это точно не mastered
+			return num, true
+		}
+		if p.Phase != entities.PhaseMastered {
+			return num, true
+		}
+	}
+
+	return 0, false
+}
+
 // handleRandom shows random name from today list (guided) OR any name (free).
-func (h *Handler) handleRandom(userID int64, messageID int) HandlerFunc {
+func (h *Handler) handleRandom(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
@@ -245,10 +358,6 @@ func (h *Handler) handleRandom(userID int64, messageID int) HandlerFunc {
 				return err
 			}
 
-			// Delete the /random command message
-			deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-			_, _ = h.bot.Send(deleteCmd)
-
 			if err = h.send(msg); err != nil {
 				return err
 			}
@@ -269,10 +378,6 @@ func (h *Handler) handleRandom(userID int64, messageID int) HandlerFunc {
 			return err
 		}
 
-		// Delete the /random command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
-
 		if err = h.send(msg); err != nil {
 			return err
 		}
@@ -285,7 +390,7 @@ func (h *Handler) handleRandom(userID int64, messageID int) HandlerFunc {
 }
 
 // handleAll sends a paginated list of all names.
-func (h *Handler) handleAll(messageID int) HandlerFunc {
+func (h *Handler) handleAll() HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		names, err := h.getAllNames(ctx)
 		if err != nil {
@@ -302,10 +407,6 @@ func (h *Handler) handleAll(messageID int) HandlerFunc {
 		prevData := buildNameCallback(page - 1)
 		nextData := buildNameCallback(page + 1)
 
-		// Delete the /all command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
-
 		msg := newMessage(chatID, text)
 		kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 		if kb != nil {
@@ -317,7 +418,7 @@ func (h *Handler) handleAll(messageID int) HandlerFunc {
 }
 
 // handleRange sends a paginated list of names in a specified range.
-func (h *Handler) handleRange(argsStr string, messageID int) HandlerFunc {
+func (h *Handler) handleRange(argsStr string) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		args := strings.Fields(argsStr)
 		if len(args) != 2 {
@@ -349,10 +450,6 @@ func (h *Handler) handleRange(argsStr string, messageID int) HandlerFunc {
 		prevData := buildRangeCallback(page-1, from, to)
 		nextData := buildRangeCallback(page+1, from, to)
 
-		// Delete the /range command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
-
 		msg := newMessage(chatID, pages[page])
 		kb := buildNameKeyboard(page, totalPages, prevData, nextData)
 		if kb != nil {
@@ -364,13 +461,9 @@ func (h *Handler) handleRange(argsStr string, messageID int) HandlerFunc {
 }
 
 // handleProgress displays user progress.
-func (h *Handler) handleProgress(userID int64, messageID int) HandlerFunc {
+func (h *Handler) handleProgress(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		h.logger.Debug("rendering progress", zap.Int64("user_id", userID))
-
-		// Delete the /progress command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
 
 		text, keyboard, err := h.RenderProgress(ctx, userID, true)
 		if err != nil {
@@ -392,13 +485,9 @@ func (h *Handler) handleProgress(userID int64, messageID int) HandlerFunc {
 }
 
 // handleSettings displays user settings.
-func (h *Handler) handleSettings(userID int64, messageID int) HandlerFunc {
+func (h *Handler) handleSettings(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		h.logger.Debug("rendering settings", zap.Int64("user_id", userID))
-
-		// Delete the /settings command message
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
 
 		text, keyboard, err := h.RenderSettings(ctx, userID)
 		if err != nil {
@@ -417,7 +506,7 @@ func (h *Handler) handleSettings(userID int64, messageID int) HandlerFunc {
 }
 
 // handleQuiz starts a quiz for the user.
-func (h *Handler) handleQuiz(userID int64, messageID int) HandlerFunc {
+func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
@@ -443,39 +532,22 @@ func (h *Handler) handleQuiz(userID int64, messageID int) HandlerFunc {
 		if activeSession != nil && activeSession.SessionStatus == "active" {
 			// Delete previous quiz question if it exists
 			if oldMsgID, exists := h.quizStorage.GetMessageID(activeSession.ID); exists {
-				deleteMsg := tgbotapi.NewDeleteMessage(chatID, oldMsgID)
-				_, _ = h.bot.Send(deleteMsg)
+				_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, oldMsgID))
 			}
 
-			// Delete the /quiz command message
-			deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-			_, _ = h.bot.Send(deleteCmd)
-
-			names := h.quizStorage.Get(activeSession.ID)
-			if len(names) > 0 {
-				// Resume from current question
-				question, name, err := h.quizService.GetCurrentQuestion(ctx, activeSession.ID, activeSession.CurrentQuestionNum)
-				if err != nil {
-					h.logger.Error("failed to get current question for resume",
-						zap.Int64("session_id", activeSession.ID),
-						zap.Int("question_num", activeSession.CurrentQuestionNum),
-						zap.Error(err),
-					)
-					return h.send(newPlainMessage(chatID, msgQuizUnavailable))
-				}
-
-				resumeMsg := newMessage(chatID, md("📝 Продолжаем квиз..."))
-				if err := h.send(resumeMsg); err != nil {
-					return err
-				}
-
-				return h.sendQuizQuestionFromDB(chatID, activeSession, question, name, activeSession.CurrentQuestionNum)
+			q, name, err := h.quizService.GetCurrentQuestion(ctx, activeSession.ID, activeSession.CurrentQuestionNum)
+			if err != nil {
+				h.logger.Error("failed to get current question for resume",
+					zap.Int64("session_id", activeSession.ID),
+					zap.Int("question_num", activeSession.CurrentQuestionNum),
+					zap.Error(err),
+				)
+				return h.send(newPlainMessage(chatID, msgQuizUnavailable))
 			}
+
+			_ = h.send(newMessage(chatID, md("📝 Продолжаем квиз...")))
+			return h.sendQuizQuestionFromDB(chatID, activeSession, q, name, activeSession.CurrentQuestionNum)
 		}
-
-		// Delete the /quiz command message for new quiz
-		deleteCmd := tgbotapi.NewDeleteMessage(chatID, messageID)
-		_, _ = h.bot.Send(deleteCmd)
 
 		// Start new quiz session
 		totalQuestions := 5 // Default number of questions
@@ -494,11 +566,24 @@ func (h *Handler) handleQuiz(userID int64, messageID int) HandlerFunc {
 			)
 
 			if errors.Is(err, service.ErrNoQuestionsAvailable) {
+				stats, stErr := h.progressService.GetProgressSummary(ctx, userID)
+				if stErr == nil && stats != nil && stats.Learned >= 99 {
+					return h.send(newMessage(chatID, msgNoNewNames()))
+				}
+
+				if settings.LearningMode == string(entities.ModeGuided) && settings.QuizMode == "new" {
+					return h.send(newMessage(chatID,
+						md("🆕 Новых вопросов нет.\n\n")+
+							md("В Guided режиме «Новые» — это только незавершённые имена из /today.\n")+
+							md("Если всё выучено — дождитесь следующего дня или увеличьте «имён в день» в /settings."),
+					))
+				}
+
 				switch settings.QuizMode {
 				case "review":
 					return h.send(newMessage(chatID, msgNoReviews()))
 				case "new":
-					return h.send(newMessage(chatID, msgNoNewNames()))
+					return h.send(newMessage(chatID, msgNoAvailableQuestions()))
 				default:
 					return h.send(newMessage(chatID, msgNoAvailableQuestions()))
 				}
@@ -514,22 +599,31 @@ func (h *Handler) handleQuiz(userID int64, messageID int) HandlerFunc {
 		// Store names for quick access during quiz
 		h.quizStorage.Store(session.ID, names)
 
-		// Send start message
-		startMsg := newMessage(chatID, buildQuizStartMessage(settings.QuizMode))
-		if err := h.send(startMsg); err != nil {
+		if err := h.send(newMessage(chatID, buildQuizStartMessage(settings.QuizMode))); err != nil {
 			return err
 		}
 
-		// Get first question and send it
-		question, name, err := h.quizService.GetCurrentQuestion(ctx, session.ID, 1)
+		q, name, err := h.quizService.GetCurrentQuestion(ctx, session.ID, 1)
 		if err != nil {
-			h.logger.Error("failed to get first question",
-				zap.Int64("session_id", session.ID),
-				zap.Error(err),
-			)
+			h.logger.Error("failed to get first question", zap.Int64("session_id", session.ID), zap.Error(err))
 			return h.send(newPlainMessage(chatID, msgQuizUnavailable))
 		}
 
-		return h.sendQuizQuestionFromDB(chatID, session, question, name, 1)
+		return h.sendQuizQuestionFromDB(chatID, session, q, name, 1)
+	}
+}
+
+func (h *Handler) handleReset() HandlerFunc {
+	return func(ctx context.Context, chatID int64) error {
+		text := md("⚠️ ") + bold("Сброс прогресса") + "\n\n" +
+			md("Вы точно хотите сбросить прогресс?") + "\n" +
+			md("Вы потеряете все изученные имена, дневной план и статистику.") + "\n\n" +
+			md("Это действие нельзя отменить.")
+
+		msg := newMessage(chatID, text)
+		if kb := buildResetKeyboard(); kb != nil {
+			msg.ReplyMarkup = *kb
+		}
+		return h.send(msg)
 	}
 }

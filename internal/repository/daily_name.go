@@ -66,6 +66,47 @@ func (r *DailyNameRepository) GetTodayNamesCount(ctx context.Context, userID int
 	return count, nil
 }
 
+// HasUnfinishedDays returns true if there are previous days with names not learned yet.
+func (r *DailyNameRepository) HasUnfinishedDays(ctx context.Context, userID int64) (bool, error) {
+	query := `
+		SELECT EXISTS (
+  			SELECT 1
+  				FROM user_daily_name udn
+					LEFT JOIN user_progress up
+  						ON up.user_id = udn.user_id AND up.name_number = udn.name_number
+  				WHERE udn.user_id = $1
+    				AND udn.date_utc < (NOW() AT TIME ZONE 'UTC')::date
+    				AND COALESCE(up.streak, 0) < 7
+		)
+	`
+
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, userID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("has unfinished days: %w", err)
+	}
+
+	return exists, nil
+}
+
+func (r *DailyNameRepository) GetOldestUnfinishedName(ctx context.Context, userID int64) (int, error) {
+	query := `
+		SELECT udn.name_number
+		FROM user_daily_name udn
+			LEFT JOIN user_progress up
+  				ON up.user_id = udn.user_id AND up.name_number = udn.name_number
+		WHERE udn.user_id = $1
+ 	 		AND udn.date_utc < (NOW() AT TIME ZONE 'UTC')::date
+  			AND COALESCE(up.streak, 0) < 7
+		ORDER BY udn.date_utc, udn.slot_index
+		LIMIT 1
+`
+	var name int
+	if err := r.db.QueryRow(ctx, query, userID).Scan(&name); err != nil {
+		return 0, fmt.Errorf("get oldest unfinished name: %w", err)
+	}
+	return name, nil
+}
+
 // AddTodayName adds a name to today's introduced names.
 func (r *DailyNameRepository) AddTodayName(ctx context.Context, userID int64, nameNumber int) error {
 	today := time.Now().UTC().Truncate(24 * time.Hour)

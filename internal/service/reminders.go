@@ -169,15 +169,19 @@ func (s *ReminderService) processReminder(
 	}
 
 	// 3. Select name by priority
-	name, err := s.selectNameForReminder(ctx, rwu.UserID, now, stats)
+	name, kind, err := s.selectNameForReminder(ctx, rwu.UserID, now, stats, rwu.LastKind)
 	if err != nil {
 		return fmt.Errorf("select name for reminder: %w", err)
 	}
 
 	if name == nil {
-		s.logger.Debug("no name to send",
-			zap.Int64("user_id", rwu.UserID),
-		)
+		s.logger.Debug("no name to send", zap.Int64("user_id", rwu.UserID))
+
+		nextSendAt := nextHourUTC(now)
+
+		if err := s.reminderRepo.RescheduleNext(ctx, rwu.UserID, nextSendAt); err != nil {
+			return fmt.Errorf("reschedule next send: %w", err)
+		}
 		return nil
 	}
 
@@ -188,6 +192,7 @@ func (s *ReminderService) processReminder(
 	}
 
 	payload := &entities.ReminderPayload{
+		Kind:  kind,
 		Name:  *name,
 		Stats: *stats,
 	}
@@ -205,7 +210,9 @@ func (s *ReminderService) processReminder(
 	}
 	nextSendAt := reminder.CalculateNextSendAt(rwu.Timezone, now)
 
-	if err := s.reminderRepo.UpdateAfterSend(ctx, rwu.UserID, now, nextSendAt); err != nil {
+	nextLastKind := nextKindForAlternation(rwu.LastKind, kind)
+
+	if err := s.reminderRepo.UpdateAfterSend(ctx, rwu.UserID, now, nextSendAt, nextLastKind); err != nil {
 		return fmt.Errorf("update after send: %w", err)
 	}
 
@@ -218,136 +225,155 @@ func (s *ReminderService) processReminder(
 	return nil
 }
 
+func nextHourUTC(t time.Time) time.Time {
+	tt := t.UTC().Truncate(time.Hour).Add(time.Hour)
+	return tt
+}
+
 // selectNameForReminder selects a name to send based on priority.
 func (s *ReminderService) selectNameForReminder(
 	ctx context.Context,
 	userID int64,
 	now time.Time,
 	stats *entities.ReminderStats,
-) (*entities.Name, error) {
+	last entities.ReminderKind,
+) (*entities.Name, entities.ReminderKind, error) {
+	prefer := preferredKind(last)
+
 	// Priority 1: Due names (SRS)
+	var reviewName *entities.Name
 	if stats.DueToday > 0 {
 		nameNumber, err := s.progressRepo.GetNextDueName(ctx, userID)
 		if err != nil {
-			return nil, fmt.Errorf("get next due name: %w", err)
+			return nil, "", fmt.Errorf("get next due name: %w", err)
 		}
-
 		if nameNumber > 0 {
 			name, err := s.nameRepo.GetByNumber(nameNumber)
 			if err != nil {
-				return nil, fmt.Errorf("get name by number: %w", err)
+				return nil, "", fmt.Errorf("get name by number: %w", err)
 			}
-
-			s.logger.Debug("selected due name for reminder",
-				zap.Int64("user_id", userID),
-				zap.Int("name_number", name.Number),
-			)
-			return name, nil
+			reviewName = name
 		}
 	}
 
 	// Priority 2: TODAY's names (user_daily_name) - repeat current names
+	var studyName *entities.Name
 	todayNames, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get today names: %w", err)
+		return nil, "", fmt.Errorf("get today names: %w", err)
 	}
-
 	if len(todayNames) > 0 {
-		// Pick random from today's names
-		randomIndex := rand.Intn(len(todayNames))
-		nameNumber := todayNames[randomIndex]
-
+		nameNumber := todayNames[rand.Intn(len(todayNames))]
 		name, err := s.nameRepo.GetByNumber(nameNumber)
 		if err != nil {
-			return nil, fmt.Errorf("get name by number: %w", err)
+			return nil, "", fmt.Errorf("get name by number: %w", err)
 		}
-
-		s.logger.Debug("selected today's name for reminder",
-			zap.Int64("user_id", userID),
-			zap.Int("name_number", name.Number),
-			zap.Int("today_count", len(todayNames)),
-		)
-		return name, nil
+		studyName = name
 	}
 
 	// Priority 3: NEW - Introduction based on namesPerDay quota (user_daily_name)
+	var newName *entities.Name
 	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get user settings: %w", err)
+		return nil, "", fmt.Errorf("get user settings: %w", err)
 	}
-
 	namesPerDay := 1
 	if settings != nil && settings.NamesPerDay > 0 {
 		namesPerDay = settings.NamesPerDay
 	}
 
-	// Check today's count from user_daily_name (НЕ из progress!)
-	todayCount, err := s.dailyNameRepo.GetTodayNamesCount(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get today names count: %w", err)
+	allowNew := true
+	if settings != nil && settings.LearningMode == string(entities.ModeGuided) {
+		hasDebt, err := s.dailyNameRepo.HasUnfinishedDays(ctx, userID)
+		if err != nil {
+			return nil, "", fmt.Errorf("has unfinished days: %w", err)
+		}
+		if hasDebt {
+			allowNew = false
+		}
 	}
 
-	// If quota not reached, introduce a new name
-	if int(todayCount) < namesPerDay {
-		nameNumbers, err := s.progressRepo.GetNamesForIntroduction(ctx, userID, 1)
+	if allowNew {
+		todayCount, err := s.dailyNameRepo.GetTodayNamesCount(ctx, userID)
 		if err != nil {
-			return nil, fmt.Errorf("get names for introduction: %w", err)
+			return nil, "", fmt.Errorf("get today names count: %w", err)
 		}
 
-		if len(nameNumbers) > 0 {
-			nameNumber := nameNumbers[0]
-
-			// Mark as introduced in progress
-			if err := s.progressRepo.MarkAsIntroduced(ctx, userID, nameNumber); err != nil {
-				return nil, fmt.Errorf("mark as introduced: %w", err)
-			}
-
-			// Add to user_daily_name
-			if err := s.dailyNameRepo.AddTodayName(ctx, userID, nameNumber); err != nil {
-				return nil, fmt.Errorf("add today name: %w", err)
-			}
-
-			name, err := s.nameRepo.GetByNumber(nameNumber)
+		if todayCount < namesPerDay {
+			nums, err := s.progressRepo.GetNamesForIntroduction(ctx, userID, 1)
 			if err != nil {
-				return nil, fmt.Errorf("get name by number: %w", err)
+				return nil, "", fmt.Errorf("get names for introduction: %w", err)
 			}
-
-			s.logger.Info("introduced new name via reminder",
-				zap.Int64("user_id", userID),
-				zap.Int("name_number", name.Number),
-				zap.Int("today_count", todayCount+1),
-				zap.Int("quota", namesPerDay),
-			)
-			return name, nil
+			if len(nums) > 0 {
+				n := nums[0]
+				if err := s.progressRepo.MarkAsIntroduced(ctx, userID, n); err != nil {
+					return nil, "", fmt.Errorf("mark as introduced: %w", err)
+				}
+				if err := s.dailyNameRepo.AddTodayName(ctx, userID, n); err != nil {
+					return nil, "", fmt.Errorf("add today name: %w", err)
+				}
+				nm, err := s.nameRepo.GetByNumber(n)
+				if err != nil {
+					return nil, "", fmt.Errorf("get name by number: %w", err)
+				}
+				newName = nm
+			}
 		}
-	} else {
-		s.logger.Debug("daily quota reached for reminder",
-			zap.Int64("user_id", userID),
-			zap.Int("today_count", todayCount),
-			zap.Int("quota", namesPerDay),
-		)
 	}
 
 	// Priority 4: Random learned name for reinforcement
-	nameNumber, err := s.progressRepo.GetRandomLearnedName(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get random learned name: %w", err)
-	}
-
-	if nameNumber > 0 {
-		name, err := s.nameRepo.GetByNumber(nameNumber)
-		if err != nil {
-			return nil, fmt.Errorf("get name by number: %w", err)
+	// prefer NEW
+	if prefer == entities.ReminderKindNew {
+		if newName != nil {
+			return newName, entities.ReminderKindNew, nil
 		}
-
-		s.logger.Debug("selected random learned name for reminder",
-			zap.Int64("user_id", userID),
-			zap.Int("name_number", name.Number),
-		)
-		return name, nil
+		if reviewName != nil {
+			return reviewName, entities.ReminderKindReview, nil
+		}
+		if studyName != nil {
+			return studyName, entities.ReminderKindStudy, nil
+		}
+		return nil, "", nil
 	}
 
-	return nil, nil
+	// prefer REVIEW
+	if reviewName != nil {
+		return reviewName, entities.ReminderKindReview, nil
+	}
+	if newName != nil {
+		return newName, entities.ReminderKindNew, nil
+	}
+	if studyName != nil {
+		return studyName, entities.ReminderKindStudy, nil
+	}
+
+	return nil, "", nil
+}
+
+func nextKindForAlternation(prev entities.ReminderKind, sent entities.ReminderKind) entities.ReminderKind {
+	if sent == entities.ReminderKindStudy {
+		if prev == "" {
+			return entities.ReminderKindNew
+		}
+		return prev
+	}
+	// если отправили new/review — запоминаем его
+	if sent == entities.ReminderKindNew || sent == entities.ReminderKindReview {
+		return sent
+	}
+	// safety
+	if prev == "" {
+		return entities.ReminderKindNew
+	}
+	return prev
+}
+
+func preferredKind(prev entities.ReminderKind) entities.ReminderKind {
+	if prev == entities.ReminderKindNew {
+		return entities.ReminderKindReview
+	}
+
+	return entities.ReminderKindNew
 }
 
 // buildReminderStats collects statistics for the reminder message.
@@ -410,6 +436,7 @@ func (s *ReminderService) GetOrCreate(ctx context.Context, userID int64) (*entit
 		}
 		return nil, fmt.Errorf("get reminder: %w", err)
 	}
+
 	return reminder, nil
 }
 
@@ -418,7 +445,7 @@ func (s *ReminderService) ToggleReminder(ctx context.Context, userID int64) erro
 	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		// Create default if not found
-		if err == repository.ErrReminderNotFound {
+		if errors.Is(err, repository.ErrReminderNotFound) {
 			reminder = entities.NewUserReminders(userID)
 		} else {
 			return fmt.Errorf("get reminder: %w", err)
@@ -447,22 +474,25 @@ func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, dura
 		return fmt.Errorf("get reminder: %w", err)
 	}
 
-	// Calculate snooze time (current time - interval hours + snooze duration)
-	// This way, next reminder will be sent after duration.
-	snoozeTime := time.Now().UTC().Add(duration - time.Duration(reminder.IntervalHours)*time.Hour)
-	reminder.LastSentAt = &snoozeTime
-	reminder.UpdatedAt = time.Now()
+	// nearest cron tick after duration (hour-aligned)
+	now := time.Now().UTC()
+	target := now.Add(duration)
+
+	next := target.Truncate(time.Hour)
+	if next.Before(target) {
+		next = next.Add(time.Hour)
+	}
+
+	reminder.NextSendAt = &next
+	reminder.UpdatedAt = time.Now().UTC()
 
 	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
 		return fmt.Errorf("upsert reminder: %w", err)
 	}
-
-	s.logger.Info("reminder snoozed",
-		zap.Int64("user_id", userID),
-		zap.Duration("duration", duration))
-
 	return nil
 }
+
+// TODO: удалить, если не используется. Есть уже ToggleReminder
 
 // DisableReminder disables reminders for a user.
 func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) error {

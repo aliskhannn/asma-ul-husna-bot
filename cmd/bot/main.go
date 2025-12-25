@@ -58,7 +58,7 @@ func main() {
 		},
 		{
 			Command:     "random",
-			Description: "Случайное имя из сегодняшних",
+			Description: "Случайное имя: Guided — из /today, Free — из всех 99",
 		},
 		{
 			Command:     "quiz",
@@ -83,6 +83,10 @@ func main() {
 		{
 			Command:     "help",
 			Description: "Помощь и список команд",
+		},
+		{
+			Command:     "reset",
+			Description: "Сбросить прогресс",
 		},
 	}
 
@@ -160,6 +164,9 @@ func main() {
 	remindersRepo := repository.NewRemindersRepository(pool)
 	remindersService := service.NewReminderService(remindersRepo, progressRepo, settingsRepo, nameRepo, dailyNameRepo, lg)
 
+	resetRepo := repository.NewResetRepository(pool)
+	resetService := service.NewResetService(resetRepo)
+
 	// Initialize in-memory storage for quiz sessions.
 	quizStorage := storage.NewQuizStorage()
 
@@ -175,6 +182,7 @@ func main() {
 		quizStorage,
 		remindersService,
 		dailyNameService,
+		resetService,
 	)
 
 	// Register Telegram notifier in reminders service.

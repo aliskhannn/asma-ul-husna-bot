@@ -32,6 +32,8 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 		h.withCallbackErrorHandling(h.handleProgressCallback)(ctx, cb)
 	case actionReminder:
 		h.withCallbackErrorHandling(h.handleReminderCallback)(ctx, cb)
+	case actionReset:
+		h.withCallbackErrorHandling(h.handleResetCallback)(ctx, cb)
 	default:
 		h.logger.Warn("unknown callback action",
 			zap.String("action", data.Action),
@@ -231,6 +233,7 @@ func (h *Handler) applySettingValue(ctx context.Context, cb *tgbotapi.CallbackQu
 	}
 }
 
+// applyLearningMode validates and applies a learning mode change from callback data.
 func (h *Handler) applyLearningMode(ctx context.Context, cb *tgbotapi.CallbackQuery, value string) error {
 	if value != "guided" && value != "free" {
 		h.logger.Warn("invalid learning_mode value", zap.String("value", value))
@@ -344,14 +347,20 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 			h.logger.Error("failed to delete message", zap.Error(err))
 		}
 
-		return h.handleQuiz(userID, cb.Message.MessageID)(ctx, chatID)
+		return h.handleQuiz(userID)(ctx, chatID)
 
 	case reminderSnooze:
-		if err := h.reminderService.SnoozeReminder(ctx, userID, time.Hour); err != nil {
+		reminder, err := h.reminderService.GetByUserID(ctx, cb.From.ID)
+		if err != nil {
 			return err
 		}
 
-		answer := tgbotapi.NewCallback(cb.ID, "⏰ Напомню через 1 час")
+		duration := time.Duration(reminder.IntervalHours) * time.Hour
+		if err := h.reminderService.SnoozeReminder(ctx, userID, duration); err != nil {
+			return err
+		}
+
+		answer := tgbotapi.NewCallback(cb.ID, "⏰ Напомню позже")
 		if _, err := h.bot.Request(answer); err != nil {
 			h.logger.Error("failed to answer callback", zap.Error(err))
 		}
@@ -491,7 +500,7 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 
 	// Handle "start quiz" action
 	if len(data.Params) == 1 && data.Params[0] == quizStart {
-		return h.handleQuiz(cb.From.ID, cb.Message.MessageID)(ctx, cb.Message.Chat.ID)
+		return h.handleQuiz(cb.From.ID)(ctx, cb.Message.Chat.ID)
 	}
 
 	// Handle quiz answer: quiz:sessionID:questionNum:answerIndex
@@ -608,6 +617,38 @@ func (h *Handler) handleProgressCallback(ctx context.Context, cb *tgbotapi.Callb
 	}
 
 	return h.send(edit)
+}
+
+func (h *Handler) handleResetCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	data := decodeCallback(cb.Data)
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+
+	if len(data.Params) == 0 {
+		return fmt.Errorf("missing reset action")
+	}
+
+	switch data.Params[0] {
+	case resetCancel:
+		_ = h.answerCallback(cb.ID, "Ок, отменено")
+		_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID))
+		return nil
+
+	case resetConfirm:
+		_ = h.answerCallback(cb.ID, "Сбрасываю прогресс...")
+
+		if err := h.resetService.ResetUser(ctx, userID); err != nil {
+			h.logger.Error("failed to reset progress", zap.Error(err), zap.Int64("user_id", userID))
+			_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID))
+			return h.send(newPlainMessage(chatID, "❌ Не удалось сбросить прогресс"))
+		}
+
+		_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID))
+		return h.send(newPlainMessage(chatID, "✅ Прогресс сброшен. Используйте /next чтобы начать заново."))
+
+	default:
+		return fmt.Errorf("unknown reset action: %q", data.Params[0])
+	}
 }
 
 // answerCallback sends a callback answer (removes loading indicator).

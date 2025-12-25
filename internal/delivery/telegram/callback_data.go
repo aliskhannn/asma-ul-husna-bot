@@ -37,6 +37,15 @@ const (
 	quizStart = "start"
 )
 
+const (
+	actionReset = "reset"
+)
+
+const (
+	resetConfirm = "confirm"
+	resetCancel  = "cancel"
+)
+
 // callbackData represents structured callback data.
 type callbackData struct {
 	Action string
@@ -66,7 +75,7 @@ func decodeCallback(data string) callbackData {
 	}
 }
 
-// Callback builders.
+// buildNameCallback builds callback data for opening a "name" page.
 func buildNameCallback(page int) string {
 	return callbackData{
 		Action: actionName,
@@ -74,6 +83,7 @@ func buildNameCallback(page int) string {
 	}.encode()
 }
 
+// buildRangeCallback builds callback data for opening a "range" page.
 func buildRangeCallback(page, from, to int) string {
 	return callbackData{
 		Action: actionRange,
@@ -85,6 +95,7 @@ func buildRangeCallback(page, from, to int) string {
 	}.encode()
 }
 
+// buildSettingsCallback builds callback data for settings-related actions.
 func buildSettingsCallback(subAction string, value ...string) string {
 	params := []string{subAction}
 	params = append(params, value...)
@@ -94,6 +105,7 @@ func buildSettingsCallback(subAction string, value ...string) string {
 	}.encode()
 }
 
+// buildQuizAnswerCallback builds callback data for answering a quiz question.
 func buildQuizAnswerCallback(sessionID int64, questionNum, answerIndex int) string {
 	return callbackData{
 		Action: actionQuiz,
@@ -105,6 +117,7 @@ func buildQuizAnswerCallback(sessionID int64, questionNum, answerIndex int) stri
 	}.encode()
 }
 
+// buildQuizStartCallback builds callback data for starting a quiz session.
 func buildQuizStartCallback() string {
 	return callbackData{
 		Action: actionQuiz,
@@ -112,14 +125,17 @@ func buildQuizStartCallback() string {
 	}.encode()
 }
 
+// buildProgressCallback builds callback data for opening the progress view.
 func buildProgressCallback() string {
 	return actionProgress
 }
 
+// buildReminderToggleCallback builds callback data for toggling reminders.
 func buildReminderToggleCallback() string {
 	return buildSettingsCallback(settingsReminders, reminderToggle)
 }
 
+// buildReminderStartQuizCallback builds callback data for starting a quiz from a reminder message.
 func buildReminderStartQuizCallback() string {
 	return callbackData{
 		Action: actionReminder,
@@ -127,6 +143,7 @@ func buildReminderStartQuizCallback() string {
 	}.encode()
 }
 
+// buildReminderSnoozeCallback builds callback data for snoozing reminders.
 func buildReminderSnoozeCallback() string {
 	return callbackData{
 		Action: actionReminder,
@@ -134,9 +151,18 @@ func buildReminderSnoozeCallback() string {
 	}.encode()
 }
 
+// buildReminderDisableCallback builds callback data for disabling reminders.
 func buildReminderDisableCallback() string {
 	return callbackData{
 		Action: actionReminder,
 		Params: []string{reminderDisable},
 	}.encode()
+}
+
+func buildResetConfirmCallback() string {
+	return callbackData{Action: actionReset, Params: []string{resetConfirm}}.encode()
+}
+
+func buildResetCancelCallback() string {
+	return callbackData{Action: actionReset, Params: []string{resetCancel}}.encode()
 }

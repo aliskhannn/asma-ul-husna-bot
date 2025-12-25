@@ -89,6 +89,20 @@ func (s *ProgressService) GetProgress(ctx context.Context, userID int64, nameNum
 	return progress, nil
 }
 
+func (s *ProgressService) GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error) {
+	return s.progressRepo.GetByNumbers(ctx, userID, nums)
+}
+
+func (s *ProgressService) GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error) {
+	streak, err := s.progressRepo.GetStreak(ctx, userID, nameNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrProgressNotFound) {
+			return 0, nil
+		}
+	}
+	return streak, nil
+}
+
 // IntroduceName marks a name as introduced to the user.
 func (s *ProgressService) IntroduceName(ctx context.Context, userID int64, nameNumber int) error {
 	err := s.progressRepo.MarkAsIntroduced(ctx, userID, nameNumber)

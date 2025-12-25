@@ -25,22 +25,19 @@ const (
 	msgProgressUnavailable  = "Не удалось получить прогресс. Попробуйте позже."
 	msgSettingsUnavailable  = "Не удалось получить настройки. Попробуйте позже."
 	msgQuizUnavailable      = "Не удалось создать квиз, попробуйте позже."
-	//msgNoAvailableQuestions = "Пока нет доступных вопросов для квиза.\nЗайдите позже или измените режим/количество новых имён в настройках."
-	//msgNoReviews      = "Повторений на сегодня нет — все имена пока не требуют повторения.\nПопробуйте режим «Смешанный» или зайдите позже."
-	//msgNoNewNames     = "Новых имён больше нет — вы прошли все 99 имён.\nПереключитесь на «Повторение» или «Смешанный», чтобы закреплять."
-	msgInternalError  = "Что‑то пошло не так. Попробуйте позже."
-	msgUnknownCommand = "Неизвестная команда. Список доступных команд:\n\n" +
+	msgInternalError        = "Что‑то пошло не так. Попробуйте позже."
+	msgUnknownCommand       = "Неизвестная команда. Список доступных команд:\n\n" +
 		"/start — начать работу с ботом\n" +
-		"/next — следующее имя на сегодня (учитывает лимит «имён в день»)\n" +
+		"/next — показать следующее имя / ввести новое\n" +
 		"/today — список всех имён на сегодня\n" +
-		"/random — случайное имя из сегодняшних (guided) или любое (free)\n" +
-		"/quiz — квиз по введённым сегодня именам\n" +
+		"/random — случайное имя (guided: из сегодняшних, free: из всех 99)\n" +
+		"/quiz — пройти квиз по изучаемым именам\n" +
 		"/all — посмотреть все 99 имён\n" +
-		"/range N M — имена с N по M (например, /range 1 10)\n" +
-		"1-99 — просмотр конкретного имени (ознакомление)\n" +
+		"/range N M — имена с N по M (использование, /range 1 10)\n" +
 		"/progress — показать статистику прогресса\n" +
-		"/settings — настройки (квиз, напоминания, количество имён в день)\n" +
-		"/help — помощь и список команд"
+		"/settings — настройки (режим обучения, квиз, напоминания, имён в день)\n" +
+		"/help — помощь и список команд\n" +
+		"/reset — сбросить прогресс (в разработке)"
 )
 
 const (
@@ -157,12 +154,8 @@ func welcomeMessage() string {
 	sb.WriteString(bold("Чтобы начать:"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(md("📚 "))
-	sb.WriteString(bold("Изучение:"))
-	sb.WriteString("\n")
 	sb.WriteString(md("• /next — "))
-	sb.WriteString(bold("следующее имя на сегодня"))
-	sb.WriteString(md(" (учитывает лимит «имён в день»)"))
+	sb.WriteString(bold("показать следующее имя/ввести новое"))
 	sb.WriteString("\n")
 	sb.WriteString(md("• /today — "))
 	sb.WriteString(bold("список всех имён на сегодня"))
@@ -170,21 +163,7 @@ func welcomeMessage() string {
 	sb.WriteString(md("• /quiz — "))
 	sb.WriteString(bold("квиз по введённым сегодня именам"))
 	sb.WriteString("\n")
-	sb.WriteString(md("• /random — "))
-	sb.WriteString(bold("случайное из сегодняшних"))
-	sb.WriteString("\n")
 	sb.WriteString(md("• 1-99 — просмотр конкретного имени (ознакомление)"))
-	sb.WriteString("\n\n")
-
-	sb.WriteString(md("📊 "))
-	sb.WriteString(bold("Прогресс и настройки:"))
-	sb.WriteString("\n")
-	sb.WriteString(md("• /progress — посмотреть статистику"))
-	sb.WriteString("\n")
-	sb.WriteString(md("• /settings — настроить квиз, напоминания, "))
-	sb.WriteString(bold("имён в день"))
-	sb.WriteString("\n")
-	sb.WriteString(md("• /help — подробная справка"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(md("💡 "))
@@ -206,47 +185,77 @@ func helpMessage() string {
 	sb.WriteString(bold("Доступные команды"))
 	sb.WriteString("\n\n")
 
+	// Learning.
 	sb.WriteString("📚 ")
 	sb.WriteString(bold("Изучение:"))
+	sb.WriteString("\n")
 	sb.WriteString("/next — ")
-	sb.WriteString(bold("следующее имя на сегодня"))
-	sb.WriteString(" \\(учитывает лимит «имён в день»\\)\n")
+	sb.WriteString(bold("показать следующее имя/ввести новое"))
+	sb.WriteString("\n")
 	sb.WriteString("/today — ")
-	sb.WriteString(bold("список всех имён на сегодня"))
+	sb.WriteString(bold("список имён на сегодня"))
+	sb.WriteString("\n")
+	sb.WriteString("/quiz — ")
+	sb.WriteString(bold("пройти квиз по изучаемым именам"))
 	sb.WriteString("\n")
 	sb.WriteString("/random — ")
-	sb.WriteString(bold("случайное из сегодняшних"))
-	sb.WriteString(" \\(guided\\) / любое \\(free\\)\n")
-	sb.WriteString("/quiz — ")
-	sb.WriteString(bold("квиз по введённым сегодня именам"))
+	sb.WriteString(bold("случайное имя"))
+	sb.WriteString(md(" (guided — из /today, free — из всех 99)"))
 	sb.WriteString("\n\n")
 
+	// Browse.
 	sb.WriteString("📖 ")
 	sb.WriteString(bold("Просмотр:"))
-	sb.WriteString("/all — Посмотреть все 99 имён\n")
-	sb.WriteString("/range N M — имена с N по M \\(например, /range 1 10\\)\n")
-	sb.WriteString("1\\-99 — просмотр конкретного имени \\(ознакомление\\)\n\n")
+	sb.WriteString("\n")
+	sb.WriteString("/all — ")
+	sb.WriteString(bold("показать все 99 имён"))
+	sb.WriteString("\n")
+	sb.WriteString("/range N M — ")
+	sb.WriteString(bold("имена с N по M"))
+	sb.WriteString(md(" (например, /range 1 10)"))
+	sb.WriteString("\n")
+	sb.WriteString("1\\-99 — ")
+	sb.WriteString(bold("просмотр конкретного имени"))
+	sb.WriteString(md(" (ознакомление)"))
+	sb.WriteString("\n\n")
 
+	// Progress.
 	sb.WriteString("📊 ")
 	sb.WriteString(bold("Прогресс:"))
-	sb.WriteString("/progress — Посмотреть статистику\n\n")
+	sb.WriteString("\n")
+	sb.WriteString("/progress — ")
+	sb.WriteString(bold("посмотреть статистику"))
+	sb.WriteString("\n\n")
 
+	// Settings.
 	sb.WriteString("⚙️ ")
 	sb.WriteString(bold("Настройки:"))
-	sb.WriteString("/settings — Квиз, напоминания, ")
-	sb.WriteString(bold("имён в день"))
 	sb.WriteString("\n")
-	sb.WriteString("/help — Показать эту справку\n\n")
+	sb.WriteString("/settings — ")
+	sb.WriteString(bold("режим обучения, квиз, напоминания, имён в день"))
+	sb.WriteString("\n")
+	sb.WriteString("/help — ")
+	sb.WriteString(bold("показать эту справку"))
+	sb.WriteString("\n")
+	sb.WriteString("/reset — ")
+	sb.WriteString(bold("сбросить прогресс"))
+	sb.WriteString("\n\n")
 
+	// Tips.
 	sb.WriteString("💡 ")
 	sb.WriteString(bold("Как использовать:"))
-	sb.WriteString("\n• ")
+	sb.WriteString("\n")
+	sb.WriteString("• ")
 	sb.WriteString(bold("/next → /today → /quiz"))
-	sb.WriteString(" — идеальный цикл изучения\\!\n")
-	sb.WriteString("• /random и номера \\(1\\-99\\) ")
+	sb.WriteString(md(" — идеальный цикл изучения!"))
+	sb.WriteString("\n")
+	sb.WriteString("• ")
+	sb.WriteString(md("/random и номера (1\\-99) "))
 	sb.WriteString(bold("не влияют"))
-	sb.WriteString(" на прогресс\n")
-	sb.WriteString("• Напоминания автоматически вводят новые имена по квоте")
+	sb.WriteString(md(" на прогресс"))
+	sb.WriteString("\n")
+	sb.WriteString("• ")
+	sb.WriteString(md("Напоминания помогают не забывать про повторение и могут вводить новые имена (в зависимости от режима и квоты)."))
 
 	return sb.String()
 }
@@ -254,7 +263,6 @@ func helpMessage() string {
 func learningModeDescription() string {
 	var sb strings.Builder
 
-	// Управляемый режим
 	sb.WriteString("🎯 ")
 	sb.WriteString(bold("Управляемый режим"))
 	sb.WriteString(" ")
@@ -266,12 +274,11 @@ func learningModeDescription() string {
 	sb.WriteString(md("• Квиз показывает"))
 	sb.WriteString(bold(" только введённые сегодня "))
 	sb.WriteString(md("имена\n"))
-	sb.WriteString(md("• После изучения (2+ правильных ответа) → разблокировка следующего\n"))
+	sb.WriteString(md("• После начала изучения (2+ правильных ответа) → разблокировка следующего\n"))
 	sb.WriteString(md("• Строгое следование SRS (интервальное повторение)\n"))
 	sb.WriteString(md("• Рекомендуется для глубокого постепенного изучения"))
 	sb.WriteString("\n\n")
 
-	// Свободный режим
 	sb.WriteString("🆓 ")
 	sb.WriteString(bold("Свободный режим"))
 	sb.WriteString(" ")
@@ -294,7 +301,7 @@ func learningModeDescription() string {
 func formatLearningMode(mode entities.LearningMode) string {
 	switch mode {
 	case entities.ModeGuided:
-		return "🎯 Управляемое (рекомендуется)"
+		return "🎯 Управляемое"
 	case entities.ModeFree:
 		return "🆓 Свободное"
 	default:
@@ -538,13 +545,11 @@ func formatProgressMessage(summary *service.ProgressSummary, progressBar string)
 	sb.WriteString(md(progressBar))
 	sb.WriteString("\n\n")
 
-	// Основная статистика
 	sb.WriteString(md(fmt.Sprintf("✅ Выучено: %d/99 (%.1f%%)\n",
 		summary.Learned, summary.Percentage)))
 
 	sb.WriteString(md(fmt.Sprintf("📚 В процессе: %d/99\n", summary.InProgress)))
 
-	// Детализация "В процессе"
 	if summary.InProgress > 0 {
 		sb.WriteString(md(fmt.Sprintf("  ├─ 🆕 Новые: %d\n", summary.NewCount)))
 		sb.WriteString(md(fmt.Sprintf("  └─ 📖 Изучаются: %d\n", summary.LearningCount)))
@@ -554,7 +559,6 @@ func formatProgressMessage(summary *service.ProgressSummary, progressBar string)
 
 	sb.WriteString("\n")
 
-	// SRS информация
 	if summary.DueToday > 0 {
 		sb.WriteString(md(fmt.Sprintf("🔄 Повторений сегодня: %d\n", summary.DueToday)))
 	}
@@ -659,28 +663,33 @@ func formatReminderStatus(reminder *entities.UserReminders) string {
 func buildReminderNotification(payload entities.ReminderPayload) string {
 	var sb strings.Builder
 
-	// Заголовок с контекстом
-	if payload.Stats.DueToday > 0 {
+	switch payload.Kind {
+	case entities.ReminderKindReview:
 		sb.WriteString(md("🔔 "))
 		sb.WriteString(bold("Время повторить имена Аллаха!"))
 		sb.WriteString("\n\n")
 		sb.WriteString(md("📖 Имя для повторения:"))
-	} else {
+	case entities.ReminderKindStudy:
+		sb.WriteString(md("📚 "))
+		sb.WriteString(bold("Время продолжить изучение сегодняшних имён!"))
+		sb.WriteString("\n\n")
+		sb.WriteString(md("📖 Имя на сегодня:"))
+	case entities.ReminderKindNew:
+		fallthrough
+	default:
 		sb.WriteString(md("🌟 "))
 		sb.WriteString(bold("Время узнать новое имя Аллаха!"))
 		sb.WriteString("\n\n")
 		sb.WriteString(md("📖 Имя на сегодня:"))
 	}
+
 	sb.WriteString("\n\n")
 
-	// Часть 1: Карточка имени
 	sb.WriteString(formatNameMessage(&payload.Name))
 	sb.WriteString("\n\n")
 
-	// Часть 2: Разделитель
 	sb.WriteString("━━━━━━━━━━━━━━━━\n")
 
-	// Часть 3: Статистика
 	sb.WriteString(md("📊 "))
 	sb.WriteString(bold("Ваш прогресс:"))
 	sb.WriteString("\n\n")

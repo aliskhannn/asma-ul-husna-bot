@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"math/rand"
+	"time"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
@@ -31,7 +32,7 @@ func NewQuestionSelector(
 func (s *QuestionSelector) SelectQuestions(
 	ctx context.Context,
 	userID int64,
-	totalQuestions int,
+	total int,
 	quizMode string,
 ) ([]int, error) {
 	// Get user settings to check learning mode
@@ -43,241 +44,249 @@ func (s *QuestionSelector) SelectQuestions(
 
 	// Selection strategy depends on LEARNING MODE, not quiz mode
 	switch settings.LearningMode {
-	case "guided":
-		return s.selectGuidedMode(ctx, userID, totalQuestions, quizMode)
-	case "free":
-		return s.selectFreeMode(ctx, userID, totalQuestions, quizMode)
+	case string(entities.ModeFree):
+		return s.selectFree(ctx, userID, total, quizMode)
+	case string(entities.ModeGuided):
+		return s.selectGuided(ctx, userID, total, quizMode)
 	default:
-		return s.selectGuidedMode(ctx, userID, totalQuestions, quizMode)
+		return s.selectGuided(ctx, userID, total, quizMode)
 	}
 }
 
-// selectGuidedMode: Shows today's introduced names + due/learning.
-func (s *QuestionSelector) selectGuidedMode(
-	ctx context.Context,
-	userID int64,
-	total int,
-	quizMode string,
-) ([]int, error) {
-	var selected []int
-
-	// Priority 1: Due reviews - 40%
-	dueLimit := total * 40 / 100
-	if dueLimit < 1 {
-		dueLimit = 1
+func (s *QuestionSelector) selectGuided(ctx context.Context, userID int64, total int, quizMode string) ([]int, error) {
+	switch quizMode {
+	case "new":
+		return s.guidedNew(ctx, userID, total)
+	case "review":
+		return s.reviewOnly(ctx, userID, total) // одинаково для guided/free
+	case "mixed":
+		return s.guidedMixed(ctx, userID, total)
+	default:
+		return s.guidedMixed(ctx, userID, total)
 	}
-
-	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, dueNames...)
-
-	remaining := total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 2: Learning phase - 30%
-	learningLimit := total * 30 / 100
-	if learningLimit < 1 {
-		learningLimit = 1
-	}
-	if learningLimit > remaining {
-		learningLimit = remaining
-	}
-
-	learningNames, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, learningNames...)
-
-	remaining = total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 3: Today's introduced names (phase = "new")
-	todayNames, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(todayNames) > remaining {
-		todayNames = todayNames[:remaining]
-	}
-	selected = append(selected, todayNames...)
-
-	remaining = total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 4: Random reinforcement
-	randomNames, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, randomNames...)
-
-	// Shuffle
-	rand.Shuffle(len(selected), func(i, j int) {
-		selected[i], selected[j] = selected[j], selected[i]
-	})
-
-	return selected, nil
 }
 
-// selectFreeMode: Can introduce new names in quiz.
-func (s *QuestionSelector) selectFreeMode(
-	ctx context.Context,
-	userID int64,
-	total int,
-	quizMode string,
-) ([]int, error) {
-	// Strategy based on quiz_mode
+func (s *QuestionSelector) guidedNew(ctx context.Context, userID int64, total int) ([]int, error) {
+	var out []int
+
+	// 1) debt: самое старое незавершённое (если есть)
+	hasDebt, err := s.dailyNameRepo.HasUnfinishedDays(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if hasDebt && len(out) < total {
+		n, err := s.dailyNameRepo.GetOldestUnfinishedName(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+
+	remaining := total - len(out)
+	if remaining <= 0 {
+		return uniqueKeepOrder(out), nil
+	}
+
+	// 2) today: берём только НЕ выученные
+	today, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]int, 0, len(today))
+	for _, n := range today {
+		streak, err := s.progressRepo.GetStreak(ctx, userID, n)
+		if err != nil {
+			// нет progress => считаем не выучено
+			filtered = append(filtered, n)
+			continue
+		}
+		if streak < 7 {
+			filtered = append(filtered, n)
+		}
+	}
+
+	if len(filtered) > remaining {
+		filtered = filtered[:remaining]
+	}
+	out = append(out, filtered...)
+
+	return uniqueKeepOrder(out), nil
+}
+
+// REVIEW-only (для guided/free): due -> learning -> reinforcement.
+func (s *QuestionSelector) reviewOnly(ctx context.Context, userID int64, total int) ([]int, error) {
+	var out []int
+
+	due, err := s.progressRepo.GetNamesDueForReview(ctx, userID, total)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, due...)
+
+	remaining := total - len(out)
+	if remaining <= 0 {
+		return uniqueKeepOrder(out), nil
+	}
+
+	learning, err := s.progressRepo.GetLearningNames(ctx, userID, remaining)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, learning...)
+
+	remaining = total - len(out)
+	if remaining <= 0 {
+		return uniqueKeepOrder(out), nil
+	}
+
+	reinf, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, reinf...)
+
+	return uniqueKeepOrder(out), nil
+}
+
+// Guided mixed: due + learning + today + reinforcement, затем shuffle.
+func (s *QuestionSelector) guidedMixed(ctx context.Context, userID int64, total int) ([]int, error) {
+	var out []int
+
+	dueLimit := max(1, total*40/100)
+	due, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, due...)
+
+	remaining := total - len(out)
+	if remaining <= 0 {
+		return shuffled(uniqueKeepOrder(out)), nil
+	}
+
+	learningLimit := min(max(1, total*30/100), remaining)
+	learning, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, learning...)
+
+	remaining = total - len(out)
+	if remaining <= 0 {
+		return shuffled(uniqueKeepOrder(out)), nil
+	}
+
+	today, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(today) > remaining {
+		today = today[:remaining]
+	}
+	out = append(out, today...)
+
+	remaining = total - len(out)
+	if remaining <= 0 {
+		return shuffled(uniqueKeepOrder(out)), nil
+	}
+
+	reinf, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, reinf...)
+
+	return shuffled(uniqueKeepOrder(out)), nil
+}
+
+// Free selection: учитывает quizMode; NEW действительно вводит новые через GetNewNames.
+func (s *QuestionSelector) selectFree(ctx context.Context, userID int64, total int, quizMode string) ([]int, error) {
 	switch quizMode {
 	case "review":
-		return s.selectReviewOnly(ctx, userID, total)
+		return s.reviewOnly(ctx, userID, total)
 	case "new":
-		return s.selectNewOnly(ctx, userID, total)
+		return s.freeNew(ctx, userID, total)
 	case "mixed":
-		return s.selectMixed(ctx, userID, total)
+		return s.freeMixed(ctx, userID, total)
 	default:
-		return s.selectMixed(ctx, userID, total)
+		return s.freeMixed(ctx, userID, total)
 	}
 }
 
-// selectReviewOnly selects only names that are due for review.
-func (s *QuestionSelector) selectReviewOnly(ctx context.Context, userID int64, total int) ([]int, error) {
-	var selected []int
-
-	// Priority 1: Due reviews (SRS)
-	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, total)
+func (s *QuestionSelector) freeNew(ctx context.Context, userID int64, total int) ([]int, error) {
+	names, err := s.progressRepo.GetNewNames(ctx, userID, total)
 	if err != nil {
 		return nil, err
 	}
-	selected = append(selected, dueNames...)
-
-	remaining := total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 2: Learning phase names
-	learningNames, err := s.progressRepo.GetLearningNames(ctx, userID, remaining)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, learningNames...)
-
-	remaining = total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 3: Random reinforcement
-	randomNames, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, randomNames...)
-
-	return selected, nil
+	return uniqueKeepOrder(names), nil
 }
 
-// selectNewOnly selects only new names for introduction.
-func (s *QuestionSelector) selectNewOnly(ctx context.Context, userID int64, total int) ([]int, error) {
-	var selected []int
+func (s *QuestionSelector) freeMixed(ctx context.Context, userID int64, total int) ([]int, error) {
+	var out []int
 
-	// Priority 1: New names for introduction
-	newNames, err := s.progressRepo.GetNamesForIntroduction(ctx, userID, total)
+	dueLimit := max(1, total*40/100)
+	due, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
 	if err != nil {
 		return nil, err
 	}
-	selected = append(selected, newNames...)
+	out = append(out, due...)
 
-	remaining := total - len(selected)
+	remaining := total - len(out)
 	if remaining <= 0 {
-		return selected, nil
+		return shuffled(uniqueKeepOrder(out)), nil
 	}
 
-	// Priority 2: Learning phase names (if not enough new names)
-	learningNames, err := s.progressRepo.GetLearningNames(ctx, userID, remaining)
+	learningLimit := min(max(1, total*30/100), remaining)
+	learning, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
 	if err != nil {
 		return nil, err
 	}
-	selected = append(selected, learningNames...)
+	out = append(out, learning...)
 
-	return selected, nil
+	remaining = total - len(out)
+	if remaining <= 0 {
+		return shuffled(uniqueKeepOrder(out)), nil
+	}
+
+	newNames, err := s.progressRepo.GetNewNames(ctx, userID, remaining)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, newNames...)
+
+	remaining = total - len(out)
+	if remaining <= 0 {
+		return shuffled(uniqueKeepOrder(out)), nil
+	}
+
+	reinf, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, reinf...)
+
+	return shuffled(uniqueKeepOrder(out)), nil
 }
 
-// selectMixed selects a balanced mix of due, learning, and new names.
-func (s *QuestionSelector) selectMixed(ctx context.Context, userID int64, total int) ([]int, error) {
-	var selected []int
+// helpers
 
-	// Priority 1: Due reviews (highest priority) - 40% of total
-	dueLimit := total * 40 / 100
-	if dueLimit < 1 {
-		dueLimit = 1
+func shuffled(in []int) []int {
+	out := append([]int(nil), in...)
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+	return out
+}
+
+func uniqueKeepOrder(nums []int) []int {
+	seen := make(map[int]struct{}, len(nums))
+	out := make([]int, 0, len(nums))
+	for _, n := range nums {
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
 	}
-
-	dueNames, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, dueNames...)
-
-	remaining := total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 2: Learning phase names - 30% of total
-	learningLimit := total * 30 / 100
-	if learningLimit < 1 {
-		learningLimit = 1
-	}
-	if learningLimit > remaining {
-		learningLimit = remaining
-	}
-
-	learningNames, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, learningNames...)
-
-	remaining = total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 3: New names (30%)
-	newLimit := remaining
-	newNames, err := s.progressRepo.GetNamesForIntroduction(ctx, userID, newLimit)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, newNames...)
-
-	remaining = total - len(selected)
-	if remaining <= 0 {
-		return selected, nil
-	}
-
-	// Priority 4: Random reinforcement to fill remaining slots
-	randomNames, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
-	if err != nil {
-		return nil, err
-	}
-	selected = append(selected, randomNames...)
-
-	// Shuffle
-	rand.Shuffle(len(selected), func(i, j int) {
-		selected[i], selected[j] = selected[j], selected[i]
-	})
-
-	return selected, nil
+	return out
 }
