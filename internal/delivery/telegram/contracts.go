@@ -25,6 +25,8 @@ type ProgressService interface {
 	GetProgressSummary(ctx context.Context, userID int64) (*service.ProgressSummary, error)
 	IntroduceName(ctx context.Context, userID int64, nameNumber int) error
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
+	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
+	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
 }
 
 // SettingsService interface for settings-related operations.
@@ -58,7 +60,8 @@ type DailyNameService interface {
 	GetTodayNames(ctx context.Context, userID int64) ([]int, error)
 	GetTodayNamesCount(ctx context.Context, userID int64) (int, error)
 	AddTodayName(ctx context.Context, userID int64, nameNumber int) error
-	RemoveTodayName(ctx context.Context, userID int64, nameNumber int) error
+	GetOldestUnfinishedName(ctx context.Context, userID int64) (int, error)
+	HasUnfinishedDays(ctx context.Context, userID int64) (bool, error)
 }
 
 // QuizStorage interface for quiz session storage.
@@ -69,4 +72,8 @@ type QuizStorage interface {
 	StoreMessageID(sessionID int64, messageID int)
 	GetMessageID(sessionID int64) (int, bool)
 	DeleteMessageID(sessionID int64)
+}
+
+type ResetService interface {
+	ResetUser(ctx context.Context, userID int64) error
 }

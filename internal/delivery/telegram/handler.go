@@ -4,6 +4,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -24,6 +25,7 @@ type Handler struct {
 	quizStorage      QuizStorage
 	reminderService  ReminderService
 	dailyNameService DailyNameService
+	resetService     ResetService
 }
 
 // NewHandler creates a new Telegram handler with dependencies.
@@ -38,6 +40,7 @@ func NewHandler(
 	quizStorage QuizStorage,
 	reminderService ReminderService,
 	dailyNameService DailyNameService,
+	resetService ResetService,
 ) *Handler {
 	return &Handler{
 		bot:              bot,
@@ -50,6 +53,7 @@ func NewHandler(
 		quizStorage:      quizStorage,
 		reminderService:  reminderService,
 		dailyNameService: dailyNameService,
+		resetService:     resetService,
 	}
 }
 
@@ -108,7 +112,6 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	chatID := update.Message.Chat.ID
-	messageID := update.Message.MessageID
 	cmdArgs := update.Message.CommandArguments()
 
 	if update.Message.IsCommand() {
@@ -122,28 +125,28 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 			}
 
 		case "next":
-			_ = h.withErrorHandling(h.handleNext(from.ID, messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleNext(from.ID))(ctx, chatID)
 
 		case "today":
-			_ = h.withErrorHandling(h.handleToday(from.ID, messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleToday(from.ID))(ctx, chatID)
 
 		case "random":
-			_ = h.withErrorHandling(h.handleRandom(from.ID, messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleRandom(from.ID))(ctx, chatID)
 
 		case "all":
-			_ = h.withErrorHandling(h.handleAll(messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleAll())(ctx, chatID)
 
 		case "range":
-			_ = h.withErrorHandling(h.handleRange(cmdArgs, messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleRange(cmdArgs))(ctx, chatID)
 
 		case "progress":
-			_ = h.withErrorHandling(h.handleProgress(from.ID, messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleProgress(from.ID))(ctx, chatID)
 
 		case "quiz":
-			_ = h.withErrorHandling(h.handleQuiz(from.ID, update.Message.MessageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleQuiz(from.ID))(ctx, chatID)
 
 		case "settings":
-			_ = h.withErrorHandling(h.handleSettings(from.ID, messageID))(ctx, chatID)
+			_ = h.withErrorHandling(h.handleSettings(from.ID))(ctx, chatID)
 
 		case "help":
 			msg := newMessage(chatID, helpMessage())
@@ -152,6 +155,9 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 					zap.Error(err),
 				)
 			}
+
+		case "reset":
+			_ = h.withErrorHandling(h.handleReset())(ctx, chatID)
 
 		default:
 			msg := newPlainMessage(chatID, msgUnknownCommand)
@@ -217,6 +223,74 @@ func (h *Handler) sendQuizQuestionFromDB(
 	h.quizStorage.StoreMessageID(session.ID, sentMsg.MessageID)
 
 	return nil
+}
+
+func (h *Handler) sendNameCard(ctx context.Context, chatID int64, messageID int, nameNumber int) error {
+	msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
+		return h.nameService.GetByNumber(ctx, nameNumber)
+	}, chatID)
+	if err != nil {
+		return err
+	}
+
+	_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, messageID))
+
+	if err := h.send(msg); err != nil {
+		return err
+	}
+	if audio != nil {
+		_ = h.send(*audio)
+	}
+	return nil
+}
+
+// sendTodayList sends a formatted list of today's names with their learning status.
+func (h *Handler) sendTodayList(ctx context.Context, chatID int64, userID int64, settings *entities.UserSettings, todayNames []int) error {
+	namesPerDay := settings.NamesPerDay
+	if namesPerDay <= 0 {
+		namesPerDay = 1
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📚 *Сегодня изучаете \\(%d/%d\\):*\n\n",
+		len(todayNames), namesPerDay))
+
+	learnedCount := 0
+	for i, nameNumber := range todayNames {
+		name, err := h.nameService.GetByNumber(ctx, nameNumber)
+		if err != nil {
+			h.logger.Warn("failed to get name by number",
+				zap.Error(err),
+				zap.Int("name_number", nameNumber))
+			continue
+		}
+
+		// Check if learned
+		streak, err := h.progressService.GetStreak(ctx, userID, nameNumber)
+		if err == nil && streak >= 7 {
+			learnedCount++
+			sb.WriteString(fmt.Sprintf("✅ %d\\. %s\n", i+1, md(name.Translation)))
+		} else {
+			sb.WriteString(fmt.Sprintf("⏳ %d\\. %s\n", i+1, md(name.Translation)))
+		}
+	}
+
+	sb.WriteString("\n")
+
+	if learnedCount == len(todayNames) {
+		sb.WriteString("✅ *Все имена изучены\\!*\n\n")
+		if len(todayNames) < namesPerDay {
+			sb.WriteString(fmt.Sprintf("Можете добавить ещё %d имя\\(ён\\) через /next\\.",
+				namesPerDay-len(todayNames)))
+		}
+	} else {
+		sb.WriteString(fmt.Sprintf("⏳ *Прогресс:* %d/%d изучено\n\n",
+			learnedCount, len(todayNames)))
+		sb.WriteString("Используйте /next чтобы продолжить\\.")
+	}
+
+	msg := newMessage(chatID, sb.String())
+	return h.send(msg)
 }
 
 // SendReminder sends a reminder notification to user

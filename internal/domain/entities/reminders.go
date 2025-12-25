@@ -2,9 +2,18 @@ package entities
 
 import "time"
 
+type ReminderKind string
+
+const (
+	ReminderKindNew    ReminderKind = "new"
+	ReminderKindReview ReminderKind = "review"
+	ReminderKindStudy  ReminderKind = "study"
+)
+
 // ReminderPayload is used to build a reminder message payload
 // that includes the name to review and related statistics.
 type ReminderPayload struct {
+	Kind  ReminderKind
 	Name  Name
 	Stats ReminderStats
 }
@@ -26,6 +35,7 @@ type ReminderWithUser struct {
 	IntervalHours int
 	StartTime     string
 	EndTime       string
+	LastKind      ReminderKind
 	LastSentAt    *time.Time
 	NextSendAt    *time.Time
 	Timezone      string
@@ -35,9 +45,10 @@ type ReminderWithUser struct {
 type UserReminders struct {
 	UserID        int64
 	IsEnabled     bool
-	IntervalHours int        // interval between reminders (in hours)
-	StartTime     string     // format "HH:MM:SS"
-	EndTime       string     // format "HH:MM:SS"
+	IntervalHours int    // interval between reminders (in hours)
+	StartTime     string // format "HH:MM:SS"
+	EndTime       string // format "HH:MM:SS"
+	LastKind      ReminderKind
 	LastSentAt    *time.Time // timestamp of the last sent reminder
 	NextSendAt    *time.Time
 	CreatedAt     time.Time
@@ -53,6 +64,7 @@ func NewUserReminders(userID int64) *UserReminders {
 		IntervalHours: 1,
 		StartTime:     "08:00:00",
 		EndTime:       "20:00:00",
+		LastKind:      ReminderKindNew,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -66,17 +78,24 @@ func (r *UserReminders) CalculateNextSendAt(timezone string, now time.Time) time
 		loc = time.UTC
 	}
 
-	userLocalTime := now.In(loc)
+	userNow := now.In(loc)
 
-	// Parse start hour
-	startTime, _ := time.Parse("15:04:05", r.StartTime)
+	// Парсим как локальное "время дня" пользователя
+	startTime, err := time.ParseInLocation("15:04:05", r.StartTime, loc)
+	if err != nil {
+		// дефолт 08:00:00
+		startTime = time.Date(0, 1, 1, 8, 0, 0, 0, loc)
+	}
+	endTime, err := time.ParseInLocation("15:04:05", r.EndTime, loc)
+	if err != nil {
+		// дефолт 20:00:00
+		endTime = time.Date(0, 1, 1, 20, 0, 0, 0, loc)
+	}
+
 	startHour := startTime.Hour()
-
-	// Parse end hour
-	endTime, _ := time.Parse("15:04:05", r.EndTime)
 	endHour := endTime.Hour()
 
-	currentHour := userLocalTime.Hour()
+	currentHour := userNow.Hour()
 
 	// Find next valid hour
 	var nextHour int
@@ -100,23 +119,18 @@ func (r *UserReminders) CalculateNextSendAt(timezone string, now time.Time) time
 	}
 
 	// Build next send time at the start of the hour (XX:00:00)
-	nextSendTime := time.Date(
-		userLocalTime.Year(),
-		userLocalTime.Month(),
-		userLocalTime.Day(),
-		nextHour%24,
-		0, // minute
-		0, // second
-		0, // nanosecond
+	nextSendLocal := time.Date(
+		userNow.Year(), userNow.Month(), userNow.Day(),
+		nextHour%24, 0, 0, 0,
 		loc,
 	)
 
 	// Add day if needed
 	if nextHour >= 24 {
-		nextSendTime = nextSendTime.AddDate(0, 0, 1)
+		nextSendLocal = nextSendLocal.AddDate(0, 0, 1)
 	}
 
-	return nextSendTime.In(time.UTC)
+	return nextSendLocal.UTC()
 }
 
 // CanSendNow checks if it's time to send a reminder.
@@ -129,6 +143,5 @@ func (r *ReminderWithUser) CanSendNow(now time.Time) bool {
 		return true // First reminder, should send
 	}
 
-	// Check if current time has reached or passed next_send_at
-	return now.After(*r.NextSendAt) || now.Equal(*r.NextSendAt)
+	return !now.Before(*r.NextSendAt)
 }

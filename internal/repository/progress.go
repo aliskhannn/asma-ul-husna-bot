@@ -103,6 +103,61 @@ func (r *ProgressRepository) Get(ctx context.Context, userID int64, nameNumber i
 	return &progress, nil
 }
 
+func (r *ProgressRepository) GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error) {
+	query := `
+      SELECT user_id, name_number, phase, ease, streak, interval_days,
+             next_review_at, review_count, correct_count, first_seen_at, last_reviewed_at
+      FROM user_progress
+      WHERE user_id = $1 AND name_number = ANY($2::int4[])
+    `
+
+	numsInt4 := toInt4(nums)
+	rows, err := r.db.Query(ctx, query, userID, numsInt4)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[int]*entities.UserProgress, len(nums))
+	for rows.Next() {
+		p := new(entities.UserProgress)
+		if err := rows.Scan(
+			&p.UserID, &p.NameNumber, &p.Phase, &p.Ease, &p.Streak, &p.IntervalDays,
+			&p.NextReviewAt, &p.ReviewCount, &p.CorrectCount, &p.FirstSeenAt, &p.LastReviewedAt,
+		); err != nil {
+			return nil, err
+		}
+		res[p.NameNumber] = p
+	}
+	return res, rows.Err()
+}
+
+func toInt4(nums []int) []int32 {
+	out := make([]int32, len(nums))
+	for i, v := range nums {
+		out[i] = int32(v)
+	}
+	return out
+}
+
+func (r *ProgressRepository) GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error) {
+	query := `
+		SELECT streak
+		FROM user_progress WHERE user_id = $1 AND name_number = $2
+	`
+
+	var streak int
+	err := r.db.QueryRow(ctx, query, userID, nameNumber).Scan(&streak)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, ErrProgressNotFound
+		}
+		return 0, fmt.Errorf("get streak: %w", err)
+	}
+
+	return streak, nil
+}
+
 // GetWithTx retrieves progress with appropriate interface.
 func (r *ProgressRepository) GetWithTx(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int) (*entities.UserProgress, error) {
 	query := `
@@ -320,56 +375,6 @@ func (r *ProgressRepository) MarkAsIntroduced(ctx context.Context, userID int64,
 	return nil
 }
 
-// GetIntroducedTodayCount returns the count of names introduced today.
-func (r *ProgressRepository) GetIntroducedTodayCount(ctx context.Context, userID int64, dateUTC time.Time) (int, error) {
-	query := `
-		SELECT COUNT(*)
-		FROM user_progress
-		WHERE user_id = $1
-		  AND introduced_at IS NOT NULL
-		  AND DATE(introduced_at) = DATE($2)
-	`
-
-	var count int
-	err := r.db.QueryRow(ctx, query, userID, dateUTC).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("get introduced today count: %w", err)
-	}
-
-	return count, nil
-}
-
-// GetIntroducedButNotReviewed retrieves names shown via reminders but not yet quizzed.
-func (r *ProgressRepository) GetIntroducedButNotReviewed(ctx context.Context, userID int64, limit int) ([]int, error) {
-	query := `
-		SELECT name_number
-		FROM user_progress
-		WHERE user_id = $1
-		  AND phase = 'new'
-		  AND review_count = 0
-		  AND first_seen_at IS NOT NULL
-		ORDER BY first_seen_at
-		LIMIT $2
-	`
-
-	rows, err := r.db.Query(ctx, query, userID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get introduced but not reviewed: %w", err)
-	}
-	defer rows.Close()
-
-	var names []int
-	for rows.Next() {
-		var nameNumber int
-		if err := rows.Scan(&nameNumber); err != nil {
-			return nil, fmt.Errorf("scan name number: %w", err)
-		}
-		names = append(names, nameNumber)
-	}
-
-	return names, rows.Err()
-}
-
 // ProgressStats contains user progress statistics for /progress command.
 type ProgressStats struct {
 	TotalViewed    int
@@ -458,30 +463,6 @@ func (r *ProgressRepository) GetNextDueName(ctx context.Context, userID int64) (
 	return nameNumber, nil
 }
 
-// GetRandomLearnedName retrieves a random learned name.
-func (r *ProgressRepository) GetRandomLearnedName(ctx context.Context, userID int64) (int, error) {
-	query := `
-		SELECT name_number
-		FROM user_progress
-		WHERE user_id = $1
-		ORDER BY RANDOM()
-		LIMIT 1
-	`
-
-	var nameNumber int
-	err := r.db.QueryRow(ctx, query, userID).Scan(&nameNumber)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("get random learned name: %w", err)
-	}
-
-	return nameNumber, nil
-}
-
-// TODO: удалить все ниже, если не используются
-
 // GetByUserID retrieves all progress records for a given user.
 func (r *ProgressRepository) GetByUserID(ctx context.Context, userID int64) ([]*entities.UserProgress, error) {
 	query := `
@@ -523,21 +504,4 @@ func (r *ProgressRepository) GetByUserID(ctx context.Context, userID int64) ([]*
 	}
 
 	return progress, rows.Err()
-}
-
-// MarkAsViewed creates a progress record when user views a name via it's number.
-// Does nothing if record already exists.
-func (r *ProgressRepository) MarkAsViewed(ctx context.Context, userID int64, nameNumber int) error {
-	query := `
-    	INSERT INTO user_progress (user_id, name_number, phase)
-    	VALUES ($1, $2, 'new')
-    	ON CONFLICT (user_id, name_number) DO NOTHING
-    `
-
-	_, err := r.db.Exec(ctx, query, userID, nameNumber)
-	if err != nil {
-		return fmt.Errorf("mark as viewed: %w", err)
-	}
-
-	return nil
 }

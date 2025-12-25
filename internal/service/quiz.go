@@ -370,9 +370,6 @@ func (s *QuizService) updateProgress(ctx context.Context, tx pgx.Tx, userID int6
 		progress = entities.NewUserProgress(userID, nameNumber)
 	}
 
-	// Remember old phase
-	oldPhase := progress.Phase
-
 	// Update SRS
 	now := time.Now()
 	progress.UpdateSRS(quality, now)
@@ -380,24 +377,6 @@ func (s *QuizService) updateProgress(ctx context.Context, tx pgx.Tx, userID int6
 	// Upsert progress
 	if err := s.progressRepo.UpsertWithTx(ctx, tx, progress); err != nil {
 		return err
-	}
-
-	// If transitioned from "new" to "learning", remove from today's list
-	if oldPhase == entities.PhaseNew && progress.Phase == entities.PhaseLearning {
-		// This allows introducing next name via /next
-		if err := s.dailyNameRepo.RemoveTodayName(ctx, userID, nameNumber); err != nil {
-			// Log but don't fail
-			s.logger.Warn("failed to remove from today names",
-				zap.Int64("user_id", userID),
-				zap.Int("name_number", nameNumber),
-				zap.Error(err),
-			)
-		} else {
-			s.logger.Info("removed from today names (transitioned to learning)",
-				zap.Int64("user_id", userID),
-				zap.Int("name_number", nameNumber),
-			)
-		}
 	}
 
 	return nil

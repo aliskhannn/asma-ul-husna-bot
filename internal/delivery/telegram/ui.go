@@ -225,3 +225,13 @@ func buildTimeWindowKeyboard() tgbotapi.InlineKeyboardMarkup {
 		),
 	)
 }
+
+func buildResetKeyboard() *tgbotapi.InlineKeyboardMarkup {
+	kb := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑 Сбросить", buildResetConfirmCallback()),
+			tgbotapi.NewInlineKeyboardButtonData("✅ Отменить", buildResetCancelCallback()),
+		),
+	)
+	return &kb
+}

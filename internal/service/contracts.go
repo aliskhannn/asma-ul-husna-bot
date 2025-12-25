@@ -39,17 +39,15 @@ type ProgressRepository interface {
 	Get(ctx context.Context, userID int64, nameNumber int) (*entities.UserProgress, error)
 	// GetNextDueName retrieves the next name due for review.
 	GetNextDueName(ctx context.Context, userID int64) (int, error)
-	// GetRandomLearnedName retrieves a random learned name.
-	GetRandomLearnedName(ctx context.Context, userID int64) (int, error)
-	GetIntroducedTodayCount(ctx context.Context, userID int64, dateUTC time.Time) (int, error)
 	GetNamesForIntroduction(ctx context.Context, userID int64, limit int) ([]int, error)
 	MarkAsIntroduced(ctx context.Context, userID int64, nameNumber int) error
 	GetLearningNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetRandomReinforcementNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetWithTx(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int) (*entities.UserProgress, error)
 	UpsertWithTx(ctx context.Context, tx pgx.Tx, progress *entities.UserProgress) error
-	GetIntroducedButNotReviewed(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
+	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
+	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
 }
 
 // QuizRepository defines operations for quiz session and answer persistence.
@@ -86,7 +84,8 @@ type ReminderRepository interface {
 	// Upsert creates or updates reminder settings.
 	Upsert(ctx context.Context, rem *entities.UserReminders) error
 	GetDueRemindersBatch(ctx context.Context, now time.Time, limit, offset int) ([]*entities.ReminderWithUser, error)
-	UpdateAfterSend(ctx context.Context, userID int64, sentAt time.Time, nextSendAt time.Time) error
+	UpdateAfterSend(ctx context.Context, userID int64, sentAt time.Time, nextSendAt time.Time, lastKind entities.ReminderKind) error
+	RescheduleNext(ctx context.Context, userID int64, nextSendAt time.Time) error
 }
 
 // ReminderNotifier sends reminder notifications to users.
@@ -98,6 +97,12 @@ type ReminderNotifier interface {
 type DailyNameRepository interface {
 	GetTodayNames(ctx context.Context, userID int64) ([]int, error)
 	GetTodayNamesCount(ctx context.Context, userID int64) (int, error)
+	HasUnfinishedDays(ctx context.Context, userID int64) (bool, error)
 	AddTodayName(ctx context.Context, userID int64, nameNumber int) error
 	RemoveTodayName(ctx context.Context, userID int64, nameNumber int) error
+	GetOldestUnfinishedName(ctx context.Context, userID int64) (int, error)
+}
+
+type ResetRepository interface {
+	ResetUser(ctx context.Context, userID int64) error
 }
