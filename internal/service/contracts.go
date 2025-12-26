@@ -83,6 +83,7 @@ type ReminderRepository interface {
 	GetByUserID(ctx context.Context, userID int64) (*entities.UserReminders, error)
 	// Upsert creates or updates reminder settings.
 	Upsert(ctx context.Context, rem *entities.UserReminders) error
+	GetDueReminder(ctx context.Context, userID int64) (*entities.ReminderWithUser, error)
 	GetDueRemindersBatch(ctx context.Context, now time.Time, limit, offset int) ([]*entities.ReminderWithUser, error)
 	UpdateAfterSend(ctx context.Context, userID int64, sentAt time.Time, nextSendAt time.Time, lastKind entities.ReminderKind) error
 	RescheduleNext(ctx context.Context, userID int64, nextSendAt time.Time) error

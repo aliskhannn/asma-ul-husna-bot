@@ -134,6 +134,73 @@ func (r *ReminderRepository) Upsert(ctx context.Context, reminder *entities.User
 	return nil
 }
 
+// GetDueReminder retrieves a single due reminder for a user.
+func (r *ReminderRepository) GetDueReminder(ctx context.Context, userID int64) (*entities.ReminderWithUser, error) {
+	query := `
+        SELECT 
+            ur.user_id,
+            u.chat_id,
+            ur.is_enabled,
+            ur.interval_hours,
+            ur.start_time,
+            ur.end_time,
+            ur.last_sent_at,
+            ur.next_send_at,
+            ur.last_kind,
+            COALESCE(us.timezone, 'UTC') as timezone
+        FROM user_reminders ur
+        INNER JOIN users u ON ur.user_id = u.id
+        LEFT JOIN user_settings us ON ur.user_id = us.user_id
+        WHERE ur.is_enabled = true
+          AND u.is_active = true
+          AND ur.user_id = $1
+          AND (ur.next_send_at IS NULL OR ur.next_send_at <= $2)
+        ORDER BY ur.next_send_at NULLS FIRST
+        LIMIT 1
+    `
+
+	var rwu entities.ReminderWithUser
+	var lastSent pgtype.Timestamptz
+	var nextSend pgtype.Timestamptz
+	var lastKind string
+
+	now := time.Now()
+
+	err := r.db.QueryRow(ctx, query, userID, now).Scan(
+		&rwu.UserID,
+		&rwu.ChatID,
+		&rwu.IsEnabled,
+		&rwu.IntervalHours,
+		&rwu.StartTime,
+		&rwu.EndTime,
+		&lastSent,
+		&nextSend,
+		&lastKind,
+		&rwu.Timezone,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrReminderNotFound
+		}
+		return nil, fmt.Errorf("get due reminder: %w", err)
+	}
+
+	if lastSent.Valid {
+		t := lastSent.Time
+		rwu.LastSentAt = &t
+	}
+	if nextSend.Valid {
+		t := nextSend.Time
+		rwu.NextSendAt = &t
+	}
+	rwu.LastKind = entities.ReminderKind(lastKind)
+	if rwu.LastKind == "" {
+		rwu.LastKind = entities.ReminderKindNew
+	}
+
+	return &rwu, nil
+}
+
 // GetDueRemindersBatch retrieves reminders that are due to be sent (paginated).
 func (r *ReminderRepository) GetDueRemindersBatch(ctx context.Context, now time.Time, limit, offset int) ([]*entities.ReminderWithUser, error) {
 	query := `
