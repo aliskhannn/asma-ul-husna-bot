@@ -7,14 +7,13 @@ import (
 	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/config"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/delivery/telegram"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/logger"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/storage"
 )
@@ -126,19 +125,10 @@ func main() {
 		lg.Fatal("failed to get database DSN", zap.Error(err))
 	}
 
-	// Parse pool configuration for PostgreSQL connection.
-	poolConfig, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		lg.Fatal("failed to parse db config",
-			zap.Error(err),
-		)
-	}
-
-	poolConfig.MaxConns = int32(cfg.DB.MaxConnections) // set maximum number of connections in pool
-	poolConfig.MaxConnLifetime = cfg.DB.MaxConnLifetime
-
-	// Initialize connection pool for PostgreSQL.
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := postgres.NewPool(ctx, connString, postgres.PoolConfig{
+		MaxConns:        cfg.DB.MaxConnections,
+		MaxConnLifetime: cfg.DB.MaxConnLifetime,
+	})
 	if err != nil {
 		lg.Fatal("failed to connect to db",
 			zap.Error(err),

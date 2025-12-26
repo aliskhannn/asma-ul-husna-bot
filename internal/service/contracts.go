@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 )
 
 // UserRepository defines operations for user persistence.

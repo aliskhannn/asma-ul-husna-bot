@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 )
 
 // ReminderService handles reminder business logic with batch processing.

@@ -22,7 +22,7 @@ type Config struct {
 // DB contains database-related configuration parameters.
 type DB struct {
 	URL             string        `mapstructure:"-"`                 // database connection string loaded from environment
-	MaxConnections  int           `mapstructure:"max_connections"`   // maximum number of open connections in the pool
+	MaxConnections  int32         `mapstructure:"max_connections"`   // maximum number of open connections in the pool
 	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"` // maximum lifetime of a single connection
 }
 
