@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 var (
@@ -19,16 +19,16 @@ var (
 
 // QuizRepository provides access to quiz session and answer data in the database.
 type QuizRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
 // NewQuizRepository creates a new QuizRepository with the provided database pool.
-func NewQuizRepository(db *pgxpool.Pool) *QuizRepository {
+func NewQuizRepository(db postgres.DBTX) *QuizRepository {
 	return &QuizRepository{db: db}
 }
 
-// CreateWithTx creates a new quiz session within a transaction.
-func (r *QuizRepository) CreateWithTx(ctx context.Context, tx pgx.Tx, session *entities.QuizSession) (int64, error) {
+// Create creates a new quiz session within a transaction.
+func (r *QuizRepository) Create(ctx context.Context, session *entities.QuizSession) (int64, error) {
 	query := `
 		INSERT INTO quiz_sessions (
 			user_id, current_question_num, total_questions, 
@@ -38,7 +38,7 @@ func (r *QuizRepository) CreateWithTx(ctx context.Context, tx pgx.Tx, session *e
 	`
 
 	var id int64
-	err := tx.QueryRow(
+	err := r.db.QueryRow(
 		ctx,
 		query,
 		session.UserID,
@@ -56,8 +56,8 @@ func (r *QuizRepository) CreateWithTx(ctx context.Context, tx pgx.Tx, session *e
 	return id, nil
 }
 
-// CreateQuestionWithTx creates a quiz question within a transaction.
-func (r *QuizRepository) CreateQuestionWithTx(ctx context.Context, tx pgx.Tx, session *entities.QuizQuestion) (int64, error) {
+// CreateQuestion creates a quiz question within a transaction.
+func (r *QuizRepository) CreateQuestion(ctx context.Context, session *entities.QuizQuestion) (int64, error) {
 	query := `
 		INSERT INTO quiz_questions (
 		    session_id, question_order, name_number, 
@@ -67,7 +67,7 @@ func (r *QuizRepository) CreateQuestionWithTx(ctx context.Context, tx pgx.Tx, se
 	`
 
 	var id int64
-	err := tx.QueryRow(
+	err := r.db.QueryRow(
 		ctx,
 		query,
 		session.SessionID,
@@ -85,8 +85,8 @@ func (r *QuizRepository) CreateQuestionWithTx(ctx context.Context, tx pgx.Tx, se
 	return id, nil
 }
 
-// GetSessionForUpdateWithTx retrieves a session with row-level lock for update
-func (r *QuizRepository) GetSessionForUpdateWithTx(ctx context.Context, tx pgx.Tx, sessionID, userID int64) (*entities.QuizSession, error) {
+// GetSessionForUpdate retrieves a session with row-level lock for update
+func (r *QuizRepository) GetSessionForUpdate(ctx context.Context, sessionID, userID int64) (*entities.QuizSession, error) {
 	query := `
 		SELECT id, user_id, current_question_num, correct_answers, total_questions,
 		       quiz_mode, session_status, started_at, completed_at, version
@@ -96,7 +96,7 @@ func (r *QuizRepository) GetSessionForUpdateWithTx(ctx context.Context, tx pgx.T
 	`
 
 	var session entities.QuizSession
-	err := tx.QueryRow(ctx, query, sessionID, userID).Scan(
+	err := r.db.QueryRow(ctx, query, sessionID, userID).Scan(
 		&session.ID,
 		&session.UserID,
 		&session.CurrentQuestionNum,
@@ -186,14 +186,14 @@ func (r *QuizRepository) GetQuestionByOrder(ctx context.Context, sessionID int64
 	return &q, nil
 }
 
-// SaveAnswerWithTx saves a quiz answer within a transaction.
-func (r *QuizRepository) SaveAnswerWithTx(ctx context.Context, tx pgx.Tx, answer *entities.QuizAnswer) error {
+// SaveAnswer saves a quiz answer within a transaction.
+func (r *QuizRepository) SaveAnswer(ctx context.Context, answer *entities.QuizAnswer) error {
 	query := `
 		INSERT INTO quiz_answers (user_id, session_id, question_id, name_number, user_answer, correct_answer, question_type, is_correct, answered_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
-	_, err := tx.Exec(
+	_, err := r.db.Exec(
 		ctx,
 		query,
 		answer.UserID,
@@ -214,8 +214,8 @@ func (r *QuizRepository) SaveAnswerWithTx(ctx context.Context, tx pgx.Tx, answer
 	return nil
 }
 
-// UpdateSessionWithTx updates a quiz session using optimistic locking.
-func (r *QuizRepository) UpdateSessionWithTx(ctx context.Context, tx pgx.Tx, session *entities.QuizSession) error {
+// UpdateSession updates a quiz session using optimistic locking.
+func (r *QuizRepository) UpdateSession(ctx context.Context, session *entities.QuizSession) error {
 	query := `
 		UPDATE quiz_sessions
 		SET current_question_num = $1,
@@ -226,7 +226,7 @@ func (r *QuizRepository) UpdateSessionWithTx(ctx context.Context, tx pgx.Tx, ses
 		WHERE id = $5 AND version = $6
 	`
 
-	result, err := tx.Exec(
+	result, err := r.db.Exec(
 		ctx,
 		query,
 		session.CurrentQuestionNum,

@@ -136,18 +136,3 @@ func levenshteinDistance(s1, s2 string) int {
 
 	return prev[cols-1]
 }
-
-// NormalizeCallbackData normalizes callback data for button answers.
-func NormalizeCallbackData(data string) string {
-	return strings.TrimSpace(strings.ToLower(data))
-}
-
-// ExtractAnswerFromCallback extracts the actual answer text from callback data.
-// Callback format: "quiz_answer:<session_id>:<option_text>"
-func ExtractAnswerFromCallback(callbackData string) string {
-	parts := strings.Split(callbackData, ":")
-	if len(parts) >= 3 {
-		return strings.Join(parts[2:], ":")
-	}
-	return callbackData
-}

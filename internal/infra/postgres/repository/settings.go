@@ -7,20 +7,20 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 var ErrSettingsNotFound = errors.New("settings not found")
 
 // SettingsRepository provides access to user settings data in the database.
 type SettingsRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
 // NewSettingsRepository creates a new SettingsRepository with the provided database pool.
-func NewSettingsRepository(db *pgxpool.Pool) *SettingsRepository {
+func NewSettingsRepository(db postgres.DBTX) *SettingsRepository {
 	return &SettingsRepository{db: db}
 }
 
@@ -72,6 +72,28 @@ func (r *SettingsRepository) GetByUserID(ctx context.Context, userID int64) (*en
 	}
 
 	return &settings, nil
+}
+
+func (r *SettingsRepository) UpsertDefaults(ctx context.Context, userID int64) error {
+	query := `
+		INSERT INTO user_settings (
+			user_id, names_per_day, max_reviews_per_day, quiz_mode,
+			learning_mode, language_code, timezone, created_at, updated_at
+		) VALUES ($1, 1, 50, 'mixed', 'guided', 'ru', 'UTC', NOW(), NOW())
+		ON CONFLICT (user_id) DO UPDATE
+		SET names_per_day = EXCLUDED.names_per_day,
+		    max_reviews_per_day = EXCLUDED.max_reviews_per_day,
+		    quiz_mode = EXCLUDED.quiz_mode,
+		    learning_mode = EXCLUDED.learning_mode,
+		    language_code = EXCLUDED.language_code,
+		    timezone = EXCLUDED.timezone,
+		    updated_at = NOW()
+	`
+	_, err := r.db.Exec(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("upsert default settings: %w", err)
+	}
+	return nil
 }
 
 // UpdateNamesPerDay updates the number of names to learn per day.

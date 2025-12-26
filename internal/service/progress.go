@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 )
 
 // ProgressService provides business logic for tracking user progress.

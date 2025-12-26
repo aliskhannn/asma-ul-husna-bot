@@ -7,13 +7,13 @@ import (
 	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/config"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/delivery/telegram"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/logger"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/storage"
 )
@@ -86,7 +86,7 @@ func main() {
 		},
 		{
 			Command:     "reset",
-			Description: "Сбросить прогресс",
+			Description: "Сбросить прогресс и настройки",
 		},
 	}
 
@@ -98,7 +98,7 @@ func main() {
 		)
 	}
 
-	bot.Debug = true // enable debug mode for development
+	bot.Debug = cfg.Env == "local" // enable debug mode for development
 
 	lg.Info("authorized on account",
 		zap.String("username", bot.Self.UserName),
@@ -125,25 +125,18 @@ func main() {
 		lg.Fatal("failed to get database DSN", zap.Error(err))
 	}
 
-	// Parse pool configuration for PostgreSQL connection.
-	poolConfig, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		lg.Fatal("failed to parse db config",
-			zap.Error(err),
-		)
-	}
-
-	poolConfig.MaxConns = int32(cfg.DB.MaxConnections) // set maximum number of connections in pool
-	poolConfig.MaxConnLifetime = cfg.DB.MaxConnLifetime
-
-	// Initialize connection pool for PostgreSQL.
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := postgres.NewPool(ctx, connString, postgres.PoolConfig{
+		MaxConns:        cfg.DB.MaxConnections,
+		MaxConnLifetime: cfg.DB.MaxConnLifetime,
+	})
 	if err != nil {
 		lg.Fatal("failed to connect to db",
 			zap.Error(err),
 		)
 	}
 	defer pool.Close()
+
+	tr := postgres.NewTransactor(pool)
 
 	// Initialize repositories and services.
 	userRepo := repository.NewUserRepository(pool)
@@ -159,13 +152,12 @@ func main() {
 	dailyNameService := service.NewDailyNameService(dailyNameRepo)
 
 	quizRepo := repository.NewQuizRepository(pool)
-	quizService := service.NewQuizService(pool, nameRepo, progressRepo, quizRepo, settingsRepo, dailyNameRepo, lg)
+	quizService := service.NewQuizService(tr, nameRepo, progressRepo, quizRepo, settingsRepo, dailyNameRepo, lg)
 
 	remindersRepo := repository.NewRemindersRepository(pool)
 	remindersService := service.NewReminderService(remindersRepo, progressRepo, settingsRepo, nameRepo, dailyNameRepo, lg)
 
-	resetRepo := repository.NewResetRepository(pool)
-	resetService := service.NewResetService(resetRepo)
+	resetService := service.NewResetService(tr)
 
 	// Initialize in-memory storage for quiz sessions.
 	quizStorage := storage.NewQuizStorage()

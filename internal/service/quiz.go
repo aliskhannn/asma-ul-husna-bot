@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 )
 
 var ErrNoQuestionsAvailable = errors.New("no questions available for quiz")
@@ -28,7 +27,7 @@ var questionTypes = []entities.QuestionType{
 
 // QuizService provides business logic for quiz generation and management.
 type QuizService struct {
-	db               *pgxpool.Pool
+	tr               Transactor
 	nameRepo         NameRepository
 	progressRepo     ProgressRepository
 	quizRepo         QuizRepository
@@ -42,7 +41,7 @@ type QuizService struct {
 
 // NewQuizService creates a new QuizService with the provided repositories.
 func NewQuizService(
-	db *pgxpool.Pool,
+	tr Transactor,
 	nameRepo NameRepository,
 	progressRepo ProgressRepository,
 	quizRepo QuizRepository,
@@ -51,10 +50,8 @@ func NewQuizService(
 	logger *zap.Logger,
 ) *QuizService {
 	return &QuizService{
-		db: db,
-
+		tr:            tr,
 		nameRepo:      nameRepo,
-		progressRepo:  progressRepo,
 		quizRepo:      quizRepo,
 		settingsRepo:  settingsRepo,
 		dailyNameRepo: dailyNameRepo,
@@ -124,15 +121,6 @@ func (s *QuizService) StartQuizSession(
 	// Initialize option generator
 	optionGenerator := NewOptionGenerator(allNames)
 
-	// Start transaction
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
-
 	// Create session
 	session := &entities.QuizSession{
 		UserID:             userID,
@@ -144,41 +132,45 @@ func (s *QuizService) StartQuizSession(
 		Version:            0,
 	}
 
-	sessionID, err := s.quizRepo.CreateWithTx(ctx, tx, session)
-	if err != nil {
-		return nil, nil, fmt.Errorf("create session: %w", err)
-	}
-	session.ID = sessionID
+	err = s.tr.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		quizRepoTx := repository.NewQuizRepository(tx)
 
-	// Create questions
-	for i, name := range names {
-		questionType := s.randomQuestionType()
-
-		// Generate 4 options including the correct answer
-		options, correctIndex := optionGenerator.GenerateOptions(&name, questionType)
-
-		correctAnswer := s.getCorrectAnswerByType(&name, questionType)
-
-		question := &entities.QuizQuestion{
-			SessionID:     sessionID,
-			QuestionOrder: i + 1,
-			NameNumber:    name.Number,
-			QuestionType:  string(questionType),
-			CorrectAnswer: correctAnswer,
-			Options:       options,
-			CorrectIndex:  correctIndex,
-			CreatedAt:     time.Now(),
-		}
-
-		_, err := s.quizRepo.CreateQuestionWithTx(ctx, tx, question)
+		sessionID, err := quizRepoTx.Create(ctx, session)
 		if err != nil {
-			return nil, nil, fmt.Errorf("create question %d: %w", i+1, err)
+			return fmt.Errorf("create session: %w", err)
 		}
-	}
+		session.ID = sessionID
 
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		return nil, nil, fmt.Errorf("commit transaction: %w", err)
+		// Create questions
+		for i, name := range names {
+			questionType := s.randomQuestionType()
+
+			// Generate 4 options including the correct answer
+			options, correctIndex := optionGenerator.GenerateOptions(&name, questionType)
+
+			correctAnswer := s.getCorrectAnswerByType(&name, questionType)
+
+			question := &entities.QuizQuestion{
+				SessionID:     sessionID,
+				QuestionOrder: i + 1,
+				NameNumber:    name.Number,
+				QuestionType:  string(questionType),
+				CorrectAnswer: correctAnswer,
+				Options:       options,
+				CorrectIndex:  correctIndex,
+				CreatedAt:     time.Now(),
+			}
+
+			_, err := quizRepoTx.CreateQuestion(ctx, question)
+			if err != nil {
+				return fmt.Errorf("create question %d: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return session, names, nil
@@ -197,94 +189,91 @@ func (s *QuizService) SubmitAnswer(
 		return nil, fmt.Errorf("invalid option index: %w", err)
 	}
 
-	// Start transaction
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	var res *AnswerResult
 
-	// Get session with lock
-	session, err := s.quizRepo.GetSessionForUpdateWithTx(ctx, tx, sessionID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get session: %w", err)
-	}
+	err = s.tr.WithinTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		quizRepoTx := repository.NewQuizRepository(tx)
+		progressRepoTx := repository.NewProgressRepository(tx)
 
-	// Get current question
-	currentQuestion, err := s.quizRepo.GetQuestionByOrder(ctx, session.ID, session.CurrentQuestionNum)
-	if err != nil {
-		return nil, fmt.Errorf("get current question: %w", err)
-	}
-
-	// Validate answer by comparing indices
-	isCorrect := selectedIndex == currentQuestion.CorrectIndex
-
-	// Get actual answer text for logging
-	var userAnswerText string
-	if selectedIndex >= 0 && selectedIndex < len(currentQuestion.Options) {
-		userAnswerText = currentQuestion.Options[selectedIndex]
-	} else {
-		userAnswerText = "invalid"
-	}
-
-	// Save answer
-	answer := &entities.QuizAnswer{
-		UserID:        userID,
-		SessionID:     sessionID,
-		QuestionID:    currentQuestion.ID,
-		NameNumber:    currentQuestion.NameNumber,
-		UserAnswer:    userAnswerText,
-		CorrectAnswer: currentQuestion.CorrectAnswer,
-		QuestionType:  currentQuestion.QuestionType,
-		IsCorrect:     isCorrect,
-		AnsweredAt:    time.Now(),
-	}
-
-	if err := s.quizRepo.SaveAnswerWithTx(ctx, tx, answer); err != nil {
-		return nil, fmt.Errorf("save answer: %w", err)
-	}
-
-	// Update progress (SRS)
-	quality := entities.DetermineQuality(isCorrect, true)
-	if err := s.updateProgress(ctx, tx, userID, currentQuestion.NameNumber, quality); err != nil {
-		return nil, fmt.Errorf("update progress: %w", err)
-	}
-
-	// Update session
-	if isCorrect {
-		session.IncrementCorrectAnswers()
-	}
-	session.IncrementQuestion()
-
-	// Check if session is complete
-	if session.ShouldComplete() {
-		session.MarkCompleted(time.Now())
-	}
-
-	// Update session with optimistic locking
-	if err := s.quizRepo.UpdateSessionWithTx(ctx, tx, session); err != nil {
-		if errors.Is(err, repository.ErrOptimisticLock) {
-			return nil, errors.New("answer already submitted, please wait")
+		// Get session with lock
+		session, err := quizRepoTx.GetSessionForUpdate(ctx, sessionID, userID)
+		if err != nil {
+			return fmt.Errorf("get session: %w", err)
 		}
-		return nil, fmt.Errorf("update session: %w", err)
+
+		// Get current question
+		currentQuestion, err := quizRepoTx.GetQuestionByOrder(ctx, session.ID, session.CurrentQuestionNum)
+		if err != nil {
+			return fmt.Errorf("get current question: %w", err)
+		}
+
+		// Validate answer by comparing indices
+		isCorrect := selectedIndex == currentQuestion.CorrectIndex
+
+		// Get actual answer text for logging
+		userAnswerText := "invalid"
+		if selectedIndex >= 0 && selectedIndex < len(currentQuestion.Options) {
+			userAnswerText = currentQuestion.Options[selectedIndex]
+		}
+
+		// Save answer
+		answer := &entities.QuizAnswer{
+			UserID:        userID,
+			SessionID:     sessionID,
+			QuestionID:    currentQuestion.ID,
+			NameNumber:    currentQuestion.NameNumber,
+			UserAnswer:    userAnswerText,
+			CorrectAnswer: currentQuestion.CorrectAnswer,
+			QuestionType:  currentQuestion.QuestionType,
+			IsCorrect:     isCorrect,
+			AnsweredAt:    time.Now(),
+		}
+
+		if err := quizRepoTx.SaveAnswer(ctx, answer); err != nil {
+			return fmt.Errorf("save answer: %w", err)
+		}
+
+		// Update progress (SRS)
+		quality := entities.DetermineQuality(isCorrect, true)
+		if err := s.updateProgressTx(ctx, progressRepoTx, userID, currentQuestion.NameNumber, quality); err != nil {
+			return fmt.Errorf("update progress: %w", err)
+		}
+
+		// Update session
+		if isCorrect {
+			session.IncrementCorrectAnswers()
+		}
+		session.IncrementQuestion()
+
+		// Check if session is complete
+		if session.ShouldComplete() {
+			session.MarkCompleted(time.Now())
+		}
+
+		// Update session with optimistic locking
+		if err := quizRepoTx.UpdateSession(ctx, session); err != nil {
+			if errors.Is(err, repository.ErrOptimisticLock) {
+				return errors.New("answer already submitted, please wait")
+			}
+			return fmt.Errorf("update session: %w", err)
+		}
+
+		res = &AnswerResult{
+			IsCorrect:         isCorrect,
+			CorrectAnswer:     currentQuestion.CorrectAnswer,
+			NameNumber:        currentQuestion.NameNumber,
+			IsSessionComplete: session.IsCompleted(),
+			Score:             session.CorrectAnswers,
+			Total:             session.TotalQuestions,
+			SessionID:         sessionID,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return &AnswerResult{
-		IsCorrect:         isCorrect,
-		CorrectAnswer:     currentQuestion.CorrectAnswer,
-		NameNumber:        currentQuestion.NameNumber,
-		IsSessionComplete: session.IsCompleted(),
-		Score:             session.CorrectAnswers,
-		Total:             session.TotalQuestions,
-		SessionID:         sessionID,
-	}, nil
+	return res, nil
 }
 
 // GetActiveSession retrieves the active quiz session for a user.
@@ -359,9 +348,15 @@ func (s *QuizService) validateAnswer(selectedOption string, name *entities.Name,
 }
 
 // updateProgress updates user progress with SRS algorithm.
-func (s *QuizService) updateProgress(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int, quality entities.AnswerQuality) error {
+func (s *QuizService) updateProgressTx(
+	ctx context.Context,
+	progressRepo ProgressRepository,
+	userID int64,
+	nameNumber int,
+	quality entities.AnswerQuality,
+) error {
 	// Get existing progress
-	progress, err := s.progressRepo.GetWithTx(ctx, tx, userID, nameNumber)
+	progress, err := progressRepo.Get(ctx, userID, nameNumber)
 	if err != nil {
 		if !errors.Is(err, repository.ErrProgressNotFound) {
 			return err
@@ -374,10 +369,5 @@ func (s *QuizService) updateProgress(ctx context.Context, tx pgx.Tx, userID int6
 	now := time.Now()
 	progress.UpdateSRS(quality, now)
 
-	// Upsert progress
-	if err := s.progressRepo.UpsertWithTx(ctx, tx, progress); err != nil {
-		return err
-	}
-
-	return nil
+	return progressRepo.Upsert(ctx, progress)
 }

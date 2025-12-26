@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 )
 
 // SettingsService provides business logic for user settings management.

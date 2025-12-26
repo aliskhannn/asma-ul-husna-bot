@@ -69,7 +69,6 @@ func (s *QuestionSelector) selectGuided(ctx context.Context, userID int64, total
 func (s *QuestionSelector) guidedNew(ctx context.Context, userID int64, total int) ([]int, error) {
 	var out []int
 
-	// 1) debt: самое старое незавершённое (если есть)
 	hasDebt, err := s.dailyNameRepo.HasUnfinishedDays(ctx, userID)
 	if err != nil {
 		return nil, err

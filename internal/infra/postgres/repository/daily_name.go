@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 // DailyNameRepository manages daily introduced names.
 type DailyNameRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
 // NewDailyNameRepository creates a new DailyNameRepository.
-func NewDailyNameRepository(db *pgxpool.Pool) *DailyNameRepository {
+func NewDailyNameRepository(db postgres.DBTX) *DailyNameRepository {
 	return &DailyNameRepository{db: db}
 }
 

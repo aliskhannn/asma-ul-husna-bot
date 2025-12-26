@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
-	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres/repository"
 )
 
 // ReminderService handles reminder business logic with batch processing.
@@ -127,20 +127,20 @@ func (s *ReminderService) processBatch(ctx context.Context, reminders []*entitie
 		wg.Add(1)
 		sem <- struct{}{} // Acquire
 
-		go func(r *entities.ReminderWithUser) {
+		go func() {
 			defer wg.Done()
 			defer func() { <-sem }() // Release
 
-			if err := s.processReminder(ctx, r, now); err != nil {
+			if err := s.processReminder(ctx, rwu, now); err != nil {
 				s.logger.Error("failed to process reminder",
-					zap.Int64("user_id", r.UserID),
+					zap.Int64("user_id", rwu.UserID),
 					zap.Error(err))
 			} else {
 				mu.Lock()
 				sent++
 				mu.Unlock()
 			}
-		}(rwu)
+		}()
 	}
 
 	wg.Wait()
@@ -169,7 +169,7 @@ func (s *ReminderService) processReminder(
 	}
 
 	// 3. Select name by priority
-	name, kind, err := s.selectNameForReminder(ctx, rwu.UserID, now, stats, rwu.LastKind)
+	name, kind, err := s.selectNameForReminder(ctx, rwu.UserID, stats, rwu.LastKind)
 	if err != nil {
 		return fmt.Errorf("select name for reminder: %w", err)
 	}
@@ -234,7 +234,6 @@ func nextHourUTC(t time.Time) time.Time {
 func (s *ReminderService) selectNameForReminder(
 	ctx context.Context,
 	userID int64,
-	now time.Time,
 	stats *entities.ReminderStats,
 	last entities.ReminderKind,
 ) (*entities.Name, entities.ReminderKind, error) {
@@ -492,8 +491,6 @@ func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, dura
 	return nil
 }
 
-// TODO: удалить, если не используется. Есть уже ToggleReminder
-
 // DisableReminder disables reminders for a user.
 func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) error {
 	reminder, err := s.GetByUserID(ctx, userID)
@@ -517,7 +514,7 @@ func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) err
 func (s *ReminderService) SetReminderIntervalHours(ctx context.Context, userID int64, intervalHours int) error {
 	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
 	if err != nil {
-		if err == repository.ErrReminderNotFound {
+		if errors.Is(err, repository.ErrReminderNotFound) {
 			reminder = entities.NewUserReminders(userID)
 		} else {
 			return fmt.Errorf("get reminder: %w", err)
@@ -546,22 +543,41 @@ func (s *ReminderService) SetReminderTimeWindow(
 	userID int64,
 	startTime, endTime string,
 ) error {
+	var loc *time.Location
+
+	rwu, err := s.reminderRepo.GetDueReminder(ctx, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrReminderNotFound) {
+			loc, _ = time.LoadLocation("UTC")
+		} else {
+			return fmt.Errorf("get reminder: %w", err)
+		}
+	}
+
+	loc, err = time.LoadLocation(rwu.Timezone)
+	if err != nil {
+		return fmt.Errorf("invalid timezone: %w", err)
+	}
+
 	// Validate time format (HH:MM:SS)
-	if _, err := time.Parse("15:04:05", startTime); err != nil {
+	start, err := time.ParseInLocation("15:04:05", startTime, loc)
+	if err != nil {
 		return fmt.Errorf("invalid start time format: %w", err)
 	}
-	if _, err := time.Parse("15:04:05", endTime); err != nil {
+
+	end, err := time.ParseInLocation("15:04:05", endTime, loc)
+	if err != nil {
 		return fmt.Errorf("invalid end time format: %w", err)
 	}
 
 	// Validate that end time is after start time
-	if endTime <= startTime {
+	if end.Before(start) {
 		return fmt.Errorf("end time must be after start time")
 	}
 
 	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
 	if err != nil {
-		if err == repository.ErrReminderNotFound {
+		if errors.Is(err, repository.ErrReminderNotFound) {
 			reminder = entities.NewUserReminders(userID)
 		} else {
 			return fmt.Errorf("get reminder: %w", err)
@@ -571,7 +587,7 @@ func (s *ReminderService) SetReminderTimeWindow(
 	reminder.StartTime = startTime
 	reminder.EndTime = endTime
 	reminder.IsEnabled = true // Enable when setting time window
-	reminder.UpdatedAt = time.Now()
+	reminder.UpdatedAt = time.Now().UTC()
 
 	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
 		return fmt.Errorf("upsert reminder: %w", err)
