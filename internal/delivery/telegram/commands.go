@@ -615,7 +615,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 
 func (h *Handler) handleReset() HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
-		text := md("⚠️ ") + bold("Сброс прогресса") + "\n\n" +
+		text := md("⚠️ ") + bold("Сброс прогресса и настроек") + "\n\n" +
 			md("Вы точно хотите сбросить прогресс?") + "\n" +
 			md("Вы потеряете все изученные имена, дневной план и статистику.") + "\n\n" +
 			md("Это действие нельзя отменить.")

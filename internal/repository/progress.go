@@ -7,25 +7,25 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 var ErrProgressNotFound = errors.New("progress not found")
 
 // ProgressRepository provides access to user progress data in the database.
 type ProgressRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
 // NewProgressRepository creates a new ProgressRepository with the provided database pool.
-func NewProgressRepository(db *pgxpool.Pool) *ProgressRepository {
+func NewProgressRepository(db postgres.DBTX) *ProgressRepository {
 	return &ProgressRepository{db: db}
 }
 
-// UpsertWithTx creates or updates a progress record within a transaction.
-func (r *ProgressRepository) UpsertWithTx(ctx context.Context, tx pgx.Tx, progress *entities.UserProgress) error {
+// Upsert creates or updates a progress record within a transaction.
+func (r *ProgressRepository) Upsert(ctx context.Context, progress *entities.UserProgress) error {
 	query := `
 		INSERT INTO user_progress (
 			user_id, name_number, phase, ease, streak, interval_days,
@@ -43,7 +43,7 @@ func (r *ProgressRepository) UpsertWithTx(ctx context.Context, tx pgx.Tx, progre
 			last_reviewed_at = EXCLUDED.last_reviewed_at
 	`
 
-	_, err := tx.Exec(
+	_, err := r.db.Exec(
 		ctx,
 		query,
 		progress.UserID,
@@ -156,44 +156,6 @@ func (r *ProgressRepository) GetStreak(ctx context.Context, userID int64, nameNu
 	}
 
 	return streak, nil
-}
-
-// GetWithTx retrieves progress with appropriate interface.
-func (r *ProgressRepository) GetWithTx(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int) (*entities.UserProgress, error) {
-	query := `
-		SELECT user_id, name_number, phase, ease, streak, interval_days,
-		       next_review_at, review_count, correct_count, first_seen_at, last_reviewed_at
-		FROM user_progress
-		WHERE user_id = $1 AND name_number = $2
-	`
-
-	var progress entities.UserProgress
-	var phase string
-
-	err := tx.QueryRow(ctx, query, userID, nameNumber).Scan(
-		&progress.UserID,
-		&progress.NameNumber,
-		&phase,
-		&progress.Ease,
-		&progress.Streak,
-		&progress.IntervalDays,
-		&progress.NextReviewAt,
-		&progress.ReviewCount,
-		&progress.CorrectCount,
-		&progress.FirstSeenAt,
-		&progress.LastReviewedAt,
-	)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrProgressNotFound
-		}
-
-		return nil, fmt.Errorf("get progress: %w", err)
-	}
-
-	progress.Phase = entities.Phase(phase)
-	return &progress, nil
 }
 
 // GetNamesDueForReview retrieves names that need review based on SRS.

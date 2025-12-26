@@ -169,7 +169,7 @@ func (s *ReminderService) processReminder(
 	}
 
 	// 3. Select name by priority
-	name, kind, err := s.selectNameForReminder(ctx, rwu.UserID, now, stats, rwu.LastKind)
+	name, kind, err := s.selectNameForReminder(ctx, rwu.UserID, stats, rwu.LastKind)
 	if err != nil {
 		return fmt.Errorf("select name for reminder: %w", err)
 	}
@@ -234,7 +234,6 @@ func nextHourUTC(t time.Time) time.Time {
 func (s *ReminderService) selectNameForReminder(
 	ctx context.Context,
 	userID int64,
-	now time.Time,
 	stats *entities.ReminderStats,
 	last entities.ReminderKind,
 ) (*entities.Name, entities.ReminderKind, error) {
@@ -492,8 +491,6 @@ func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, dura
 	return nil
 }
 
-// TODO: удалить, если не используется. Есть уже ToggleReminder
-
 // DisableReminder disables reminders for a user.
 func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) error {
 	reminder, err := s.GetByUserID(ctx, userID)
@@ -517,7 +514,7 @@ func (s *ReminderService) DisableReminder(ctx context.Context, userID int64) err
 func (s *ReminderService) SetReminderIntervalHours(ctx context.Context, userID int64, intervalHours int) error {
 	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
 	if err != nil {
-		if err == repository.ErrReminderNotFound {
+		if errors.Is(err, repository.ErrReminderNotFound) {
 			reminder = entities.NewUserReminders(userID)
 		} else {
 			return fmt.Errorf("get reminder: %w", err)

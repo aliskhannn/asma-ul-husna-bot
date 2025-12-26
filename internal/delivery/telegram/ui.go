@@ -47,10 +47,10 @@ func buildProgressKeyboard() tgbotapi.InlineKeyboardMarkup {
 func buildSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎯 Режим обучения", buildSettingsCallback(settingsLearningMode)),
+			tgbotapi.NewInlineKeyboardButtonData("📚 Имён в день", buildSettingsCallback(settingsNamesPerDay)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📚 Имён в день", buildSettingsCallback(settingsNamesPerDay)),
+			tgbotapi.NewInlineKeyboardButtonData("🎯 Режим обучения", buildSettingsCallback(settingsLearningMode)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🎲 Режим квиза", buildSettingsCallback(settingsQuizMode)),
@@ -65,13 +65,13 @@ func buildLearningModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
-				"🎯 Управляемое (рекомендуется)",
+				"🎯 Управляемый (рекомендуется)",
 				buildSettingsCallback(settingsLearningMode, "guided"),
 			),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
-				"🆓 Свободное",
+				"🆓 Свободный",
 				buildSettingsCallback(settingsLearningMode, "free"),
 			),
 		),
@@ -132,7 +132,7 @@ func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("🔄 Только повторение", buildSettingsCallback(settingsQuizMode, "review")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎲 Смешанный режим", buildSettingsCallback(settingsQuizMode, "mixed")),
+			tgbotapi.NewInlineKeyboardButtonData("🎲 Смешанный", buildSettingsCallback(settingsQuizMode, "mixed")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),

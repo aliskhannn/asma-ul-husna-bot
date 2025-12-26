@@ -43,8 +43,7 @@ type ProgressRepository interface {
 	MarkAsIntroduced(ctx context.Context, userID int64, nameNumber int) error
 	GetLearningNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetRandomReinforcementNames(ctx context.Context, userID int64, limit int) ([]int, error)
-	GetWithTx(ctx context.Context, tx pgx.Tx, userID int64, nameNumber int) (*entities.UserProgress, error)
-	UpsertWithTx(ctx context.Context, tx pgx.Tx, progress *entities.UserProgress) error
+	Upsert(ctx context.Context, progress *entities.UserProgress) error
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
 	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
@@ -53,12 +52,12 @@ type ProgressRepository interface {
 // QuizRepository defines operations for quiz session and answer persistence.
 type QuizRepository interface {
 	AbandonOldSessions(ctx context.Context, userID int64) error
-	CreateWithTx(ctx context.Context, tx pgx.Tx, session *entities.QuizSession) (int64, error)
-	CreateQuestionWithTx(ctx context.Context, tx pgx.Tx, session *entities.QuizQuestion) (int64, error)
-	GetSessionForUpdateWithTx(ctx context.Context, tx pgx.Tx, sessionID, userID int64) (*entities.QuizSession, error)
+	Create(ctx context.Context, session *entities.QuizSession) (int64, error)
+	CreateQuestion(ctx context.Context, session *entities.QuizQuestion) (int64, error)
+	GetSessionForUpdate(ctx context.Context, sessionID, userID int64) (*entities.QuizSession, error)
 	GetQuestionByOrder(ctx context.Context, sessionID int64, order int) (*entities.QuizQuestion, error)
-	SaveAnswerWithTx(ctx context.Context, tx pgx.Tx, answer *entities.QuizAnswer) error
-	UpdateSessionWithTx(ctx context.Context, tx pgx.Tx, session *entities.QuizSession) error
+	SaveAnswer(ctx context.Context, answer *entities.QuizAnswer) error
+	UpdateSession(ctx context.Context, session *entities.QuizSession) error
 	GetActiveSessionByUserID(ctx context.Context, userID int64) (*entities.QuizSession, error)
 }
 
@@ -73,6 +72,7 @@ type SettingsRepository interface {
 	// UpdateQuizMode updates the quiz mode setting.
 	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
 	UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error
+	UpsertDefaults(ctx context.Context, userID int64) error
 }
 
 // ReminderRepository manages reminder persistence.
@@ -105,4 +105,8 @@ type DailyNameRepository interface {
 
 type ResetRepository interface {
 	ResetUser(ctx context.Context, userID int64) error
+}
+
+type Transactor interface {
+	WithinTx(ctx context.Context, fn func(ctx context.Context, tx pgx.Tx) error) error
 }

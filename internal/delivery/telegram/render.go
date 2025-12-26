@@ -60,8 +60,8 @@ func (h *Handler) RenderSettings(ctx context.Context, userID int64) (string, tgb
 	text := fmt.Sprintf(
 		"%s\n\n%s\n%s\n%s\n%s",
 		md("⚙️ Настройки"),
-		md(fmt.Sprintf("🎯 Режим обучения: %s", learningModeText)),
 		md(fmt.Sprintf("📚 Имён в день: %d", settings.NamesPerDay)),
+		md(fmt.Sprintf("🎯 Режим обучения: %s", learningModeText)),
 		md(fmt.Sprintf("🎲 Режим квиза: %s", quizMode)),
 		md(fmt.Sprintf("⏰ Напоминания: %s", reminderStatus)),
 	)

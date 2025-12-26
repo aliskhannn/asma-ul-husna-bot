@@ -2,45 +2,29 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 type ResetRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
-func NewResetRepository(db *pgxpool.Pool) *ResetRepository {
-	return &ResetRepository{
-		db: db,
-	}
+func NewResetRepository(db postgres.DBTX) *ResetRepository {
+	return &ResetRepository{db: db}
 }
 
 func (s *ResetRepository) ResetUser(ctx context.Context, userID int64) error {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return err
+	if _, err := s.db.Exec(ctx, `DELETE FROM quiz_sessions WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("delete quiz_sessions: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Порядок зависит от FK.
-	if _, err := tx.Exec(ctx, `DELETE FROM quiz_sessions WHERE user_id = $1`, userID); err != nil {
-		return err
+	if _, err := s.db.Exec(ctx, `DELETE FROM user_daily_name WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("delete user_daily_name: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM user_daily_name WHERE user_id = $1`, userID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM user_progress WHERE user_id = $1`, userID); err != nil {
-		return err
+	if _, err := s.db.Exec(ctx, `DELETE FROM user_progress WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("delete user_progress: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `
-		UPDATE user_reminders
-		SET last_sent_at = NULL, next_send_at = NULL, last_kind = 'new', updated_at = NOW()
-		WHERE user_id = $1
-	`, userID); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	return nil
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/config"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/delivery/telegram"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/logger"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/repository"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
@@ -86,7 +87,7 @@ func main() {
 		},
 		{
 			Command:     "reset",
-			Description: "Сбросить прогресс",
+			Description: "Сбросить прогресс и настройки",
 		},
 	}
 
@@ -145,6 +146,8 @@ func main() {
 	}
 	defer pool.Close()
 
+	tr := postgres.NewTransactor(pool)
+
 	// Initialize repositories and services.
 	userRepo := repository.NewUserRepository(pool)
 	userService := service.NewUserService(userRepo)
@@ -159,13 +162,12 @@ func main() {
 	dailyNameService := service.NewDailyNameService(dailyNameRepo)
 
 	quizRepo := repository.NewQuizRepository(pool)
-	quizService := service.NewQuizService(pool, nameRepo, progressRepo, quizRepo, settingsRepo, dailyNameRepo, lg)
+	quizService := service.NewQuizService(tr, nameRepo, progressRepo, quizRepo, settingsRepo, dailyNameRepo, lg)
 
 	remindersRepo := repository.NewRemindersRepository(pool)
 	remindersService := service.NewReminderService(remindersRepo, progressRepo, settingsRepo, nameRepo, dailyNameRepo, lg)
 
-	resetRepo := repository.NewResetRepository(pool)
-	resetService := service.NewResetService(resetRepo)
+	resetService := service.NewResetService(tr)
 
 	// Initialize in-memory storage for quiz sessions.
 	quizStorage := storage.NewQuizStorage()

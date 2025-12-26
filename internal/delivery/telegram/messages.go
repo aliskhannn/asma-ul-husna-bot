@@ -37,7 +37,7 @@ const (
 		"/progress — показать статистику прогресса\n" +
 		"/settings — настройки (режим обучения, квиз, напоминания, имён в день)\n" +
 		"/help — помощь и список команд\n" +
-		"/reset — сбросить прогресс (в разработке)"
+		"/reset — сбросить прогресс и настройки"
 )
 
 const (
@@ -79,11 +79,12 @@ func msgNoAvailableQuestions() string {
 
 	sb.WriteString(md("Пока нет доступных вопросов для квиза."))
 	sb.WriteString("\n\n")
-	sb.WriteString(md("💡 В управляемом режиме (Guided) квизы показывают только имена, которые уже были введены через напоминания."))
+	sb.WriteString(md("💡 В управляемом режиме (Guided) квизы показывают только имена, которые уже были введены через напоминания или команду /next."))
 	sb.WriteString("\n\n")
 	sb.WriteString(md("Вы можете:"))
 	sb.WriteString("\n")
 	sb.WriteString(md("• Дождаться следующего напоминания\n"))
+	sb.WriteString(md("• Использовать /next, чтобы ввести имя сейчас\n"))
 	sb.WriteString(md("• Переключиться на свободный режим (Free) в /settings\n"))
 	sb.WriteString(md("• Увеличить количество имен в день"))
 
@@ -250,7 +251,8 @@ func helpMessage() string {
 	sb.WriteString(md(" — идеальный цикл изучения!"))
 	sb.WriteString("\n")
 	sb.WriteString("• ")
-	sb.WriteString(md("/random и номера (1\\-99) "))
+	sb.WriteString(md("/random и номера "))
+	sb.WriteString("\\(1\\-99\\) ")
 	sb.WriteString(bold("не влияют"))
 	sb.WriteString(md(" на прогресс"))
 	sb.WriteString("\n")
@@ -301,9 +303,9 @@ func learningModeDescription() string {
 func formatLearningMode(mode entities.LearningMode) string {
 	switch mode {
 	case entities.ModeGuided:
-		return "🎯 Управляемое"
+		return "🎯 Управляемый"
 	case entities.ModeFree:
-		return "🆓 Свободное"
+		return "🆓 Свободный"
 	default:
 		return string(mode)
 	}
@@ -488,7 +490,7 @@ func formatQuizMode(mode string) string {
 	case "review":
 		return "🔄 Только повторение"
 	case "mixed":
-		return "🎲 Смешанный режим"
+		return "🎲 Смешанный"
 	default:
 		return mode
 	}

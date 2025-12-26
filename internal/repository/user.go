@@ -6,20 +6,20 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 var ErrUserNotFound = errors.New("user not found")
 
 // UserRepository provides access to user data in the database.
 type UserRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
 // NewUserRepository creates a new UserRepository with the provided database pool.
-func NewUserRepository(db *pgxpool.Pool) *UserRepository {
+func NewUserRepository(db postgres.DBTX) *UserRepository {
 	return &UserRepository{db: db}
 }
 

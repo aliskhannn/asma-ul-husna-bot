@@ -8,20 +8,20 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/infra/postgres"
 )
 
 var ErrReminderNotFound = errors.New("reminder not found")
 
 // ReminderRepository provides access to user reminder data in the database.
 type ReminderRepository struct {
-	db *pgxpool.Pool
+	db postgres.DBTX
 }
 
 // NewRemindersRepository creates a new ReminderRepository with the provided database pool.
-func NewRemindersRepository(db *pgxpool.Pool) *ReminderRepository {
+func NewRemindersRepository(db postgres.DBTX) *ReminderRepository {
 	return &ReminderRepository{db: db}
 }
 
