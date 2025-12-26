@@ -735,3 +735,13 @@ func buildQuizQuestionText(question *entities.QuizQuestion, name *entities.Name,
 		bold(questionPrompt),
 	)
 }
+
+func formatNamesCount(n int) string {
+	if n == 1 {
+		return "имя"
+	}
+	if n >= 2 && n <= 4 {
+		return "имени"
+	}
+	return "имён"
+}

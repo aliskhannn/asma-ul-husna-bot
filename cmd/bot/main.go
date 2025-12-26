@@ -98,7 +98,7 @@ func main() {
 		)
 	}
 
-	bot.Debug = true // enable debug mode for development
+	bot.Debug = cfg.Env == "local" // enable debug mode for development
 
 	lg.Info("authorized on account",
 		zap.String("username", bot.Self.UserName),

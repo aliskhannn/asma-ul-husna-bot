@@ -108,10 +108,10 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 
 		if planFull && dec.HasLearning {
 			msg := newPlainMessage(chatID,
-				fmt.Sprintf("📚 Сегодня вы уже изучаете %d имя(ён).\n\n"+
+				fmt.Sprintf("📚 Сегодня вы уже изучаете %d %s.\n\n"+
 					"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
 					"💡 Или увеличьте лимит в /settings → Имён в день",
-					namesPerDay))
+					namesPerDay, formatNamesCount(namesPerDay)))
 			return h.send(msg)
 		}
 
@@ -121,10 +121,10 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 
 		case TodayAllLearning:
 			msg := newPlainMessage(chatID,
-				fmt.Sprintf("📚 Сегодня вы уже изучаете %d имя(ён).\n\n"+
+				fmt.Sprintf("📚 Сегодня вы уже изучаете %d %s.\n\n"+
 					"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
 					"💡 Или увеличьте лимит в /settings → Имён в день",
-					namesPerDay))
+					namesPerDay, formatNamesCount(namesPerDay)))
 			return h.send(msg)
 
 		case TodayMixed:
