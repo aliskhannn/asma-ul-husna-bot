@@ -235,3 +235,29 @@ func buildResetKeyboard() *tgbotapi.InlineKeyboardMarkup {
 	)
 	return &kb
 }
+
+func nextCardKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🧠 Квиз", buildNextQuizCallback()),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📅 Сегодня", buildNextTodayCallback()),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", buildNextSettingsCallback()),
+		),
+	)
+}
+
+func welcomeReturningKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🧠 Квиз", buildNextQuizCallback()),
+			tgbotapi.NewInlineKeyboardButtonData("📊 Прогресс", buildProgressCallback()),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", buildNextSettingsCallback()),
+		),
+	)
+}

@@ -276,6 +276,10 @@ func (s *QuizService) SubmitAnswer(
 	return res, nil
 }
 
+func (s *QuizService) IsFirstQuiz(ctx context.Context, userID int64) (bool, error) {
+	return s.quizRepo.IsFirstQuiz(ctx, userID)
+}
+
 // GetActiveSession retrieves the active quiz session for a user.
 func (s *QuizService) GetActiveSession(ctx context.Context, userID int64) (*entities.QuizSession, error) {
 	session, err := s.quizRepo.GetActiveSessionByUserID(ctx, userID)

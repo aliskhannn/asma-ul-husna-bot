@@ -158,6 +158,26 @@ func (r *ProgressRepository) GetStreak(ctx context.Context, userID int64, nameNu
 	return streak, nil
 }
 
+func (r *ProgressRepository) CountIntroducedOnDate(ctx context.Context, userID int64, tz string) (int, error) {
+	if tz == "" {
+		tz = "UTC"
+	}
+
+	query := `
+		SELECT COUNT(*)
+		FROM user_progress
+		WHERE user_id = $1
+  			AND introduced_at IS NOT NULL
+  			AND (introduced_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
+`
+
+	var cnt int
+	if err := r.db.QueryRow(ctx, query, userID, tz).Scan(&cnt); err != nil {
+		return 0, fmt.Errorf("count introduced today: %w", err)
+	}
+	return cnt, nil
+}
+
 // GetNamesDueForReview retrieves names that need review based on SRS.
 func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error) {
 	query := `
@@ -325,7 +345,7 @@ func (r *ProgressRepository) MarkAsIntroduced(ctx context.Context, userID int64,
 			next_review_at, review_count, correct_count, 
 			first_seen_at, last_reviewed_at, introduced_at, created_at, updated_at
 		)
-		VALUES ($1, $2, 'new', 2.5, 0, 1, $3, 0, 0, $4, $4, NULL, $4, $4)
+		VALUES ($1, $2, 'new', 2.5, 0, 1, $3, 0, 0, $4, $4, $4, $4, $4)
 		ON CONFLICT (user_id, name_number) DO NOTHING
 	`
 

@@ -140,7 +140,7 @@ func main() {
 
 	// Initialize repositories and services.
 	userRepo := repository.NewUserRepository(pool)
-	userService := service.NewUserService(userRepo)
+	userService := service.NewUserService(tr, userRepo)
 
 	settingsRepo := repository.NewSettingsRepository(pool)
 	settingsService := service.NewSettingsService(settingsRepo)

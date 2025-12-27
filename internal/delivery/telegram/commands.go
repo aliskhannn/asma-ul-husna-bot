@@ -15,6 +15,33 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
+func (h *Handler) handleStart(userID int64) HandlerFunc {
+	return func(ctx context.Context, chatID int64) error {
+		isNewUser, err := h.userService.EnsureUser(ctx, userID, chatID)
+		if err != nil {
+			return h.send(newPlainMessage(chatID, msgInternalError))
+		}
+
+		stats, err := h.progressService.GetProgressSummary(ctx, userID)
+		if err != nil {
+			msg := newPlainMessage(chatID, msgInternalError)
+			return h.send(msg)
+		}
+
+		msg := newMessage(chatID, welcomeMessage(isNewUser, stats))
+
+		if isNewUser {
+			kb := onboardingStep1Keyboard()
+			msg.ReplyMarkup = kb
+		} else {
+			kb := welcomeReturningKeyboard()
+			msg.ReplyMarkup = kb
+		}
+
+		return h.send(msg)
+	}
+}
+
 // handleNumber processes numeric input and displays the corresponding name.
 func (h *Handler) handleNumber(numStr string) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
@@ -31,17 +58,16 @@ func (h *Handler) handleNumber(numStr string) HandlerFunc {
 
 		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 			return h.nameService.GetByNumber(ctx, n)
-		}, chatID)
+		}, chatID, "", "")
 		if err != nil {
-			return err
-		}
-
-		if err = h.send(msg); err != nil {
 			return err
 		}
 
 		if audio != nil {
 			_ = h.send(*audio)
+		}
+		if err = h.send(msg); err != nil {
+			return err
 		}
 
 		return nil
@@ -61,6 +87,30 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 			namesPerDay = 1
 		}
 
+		stats, err := h.progressService.GetProgressSummary(ctx, userID)
+		if err != nil {
+			return h.send(newPlainMessage(chatID, msgInternalError))
+		}
+		learnedTotal := stats.Learned
+
+		isFirstTime := stats.DueToday == 0 && stats.Learned == 0 && stats.InProgress == 0 && stats.NotStarted == 99
+		if isFirstTime {
+			if err := h.send(newMessage(chatID, nextFirstTimeIntroMessage(namesPerDay))); err != nil {
+				return h.send(newPlainMessage(chatID, msgInternalError))
+			}
+		}
+
+		introducedToday, err := h.progressService.CountIntroducedToday(ctx, userID, settings.Timezone)
+		if err != nil {
+			return h.send(newPlainMessage(chatID, msgInternalError))
+		}
+
+		if introducedToday >= namesPerDay {
+			return h.sendNextLimitReached(chatID, introducedToday, namesPerDay)
+		}
+
+		suffix := nextHintMessage()
+
 		// 1) Guided debt first
 		if settings.LearningMode == string(entities.ModeGuided) {
 			hasDebt, err := h.dailyNameService.HasUnfinishedDays(ctx, userID)
@@ -74,7 +124,9 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 					h.logger.Error("failed to get oldest unfinished name", zap.Error(err))
 					return h.send(newPlainMessage(chatID, msgNameUnavailable))
 				}
-				return h.sendNameCard(ctx, chatID, 0, n)
+
+				prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
+				return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", n, prefix, suffix)
 			}
 		}
 
@@ -85,9 +137,26 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 		}
 
+		// Helper: introduce one + recount + send card (so prefix is correct)
+		introduceAndShow := func() error {
+			nameNumber, err := h.introduceOne(ctx, userID, chatID, "", "")
+			if err != nil {
+				h.logger.Error("failed to introduce name", zap.Error(err))
+				return err
+			}
+
+			introducedToday2, err := h.progressService.CountIntroducedToday(ctx, userID, settings.Timezone)
+			if err != nil {
+				return h.send(newPlainMessage(chatID, msgInternalError))
+			}
+
+			prefix := buildNextPrefix(introducedToday2, namesPerDay, learnedTotal)
+			return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", nameNumber, prefix, suffix)
+		}
+
 		// 3) empty => introduce (if quota allows)
 		if len(todayNames) == 0 {
-			return h.introduceOne(ctx, userID, chatID)
+			return introduceAndShow()
 		}
 
 		dec, err := h.decideToday(ctx, userID, todayNames)
@@ -98,53 +167,47 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 
 		planFull := len(todayNames) >= namesPerDay
 
+		// If there is new to show => show (prefix based on introducedToday we already computed)
 		if dec.State == TodayHasNew || dec.HasNew {
-			return h.sendNameCard(ctx, chatID, 0, dec.NewToShow)
+			prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
+			return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", dec.NewToShow, prefix, suffix)
 		}
 
+		// If plan not full => introduce one and show it with updated prefix
 		if !planFull {
-			return h.introduceOne(ctx, userID, chatID)
+			return introduceAndShow()
 		}
 
+		// planFull && hasLearning => blocked
 		if planFull && dec.HasLearning {
-			msg := newPlainMessage(chatID,
-				fmt.Sprintf("📚 Сегодня вы уже изучаете %d %s.\n\n"+
-					"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
-					"💡 Или увеличьте лимит в /settings → Имён в день",
-					namesPerDay, formatNamesCount(namesPerDay)))
-			return h.send(msg)
+			return h.sendNextBlockedNeedQuiz(chatID, namesPerDay)
 		}
 
 		switch dec.State {
 		case TodayHasNew:
-			return h.sendNameCard(ctx, chatID, 0, dec.NewToShow)
+			prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
+			return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", dec.NewToShow, prefix, suffix)
 
 		case TodayAllLearning:
-			msg := newPlainMessage(chatID,
-				fmt.Sprintf("📚 Сегодня вы уже изучаете %d %s.\n\n"+
-					"Пройдите /quiz чтобы закрепить текущие имена и разблокировать следующие!\n\n"+
-					"💡 Или увеличьте лимит в /settings → Имён в день",
-					namesPerDay, formatNamesCount(namesPerDay)))
-			return h.send(msg)
+			return h.sendNextBlockedNeedQuiz(chatID, namesPerDay)
 
 		case TodayMixed:
 			if n, ok := h.chooseFirstNotMastered(ctx, userID, todayNames); ok {
-				return h.sendNameCard(ctx, chatID, 0, n)
+				prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
+				return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", n, prefix, suffix)
 			}
 			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 
 		case TodayAllMastered:
 			if len(todayNames) < namesPerDay {
-				return h.introduceOne(ctx, userID, chatID)
+				return introduceAndShow()
 			}
-
-			msg := newPlainMessage(chatID,
+			return h.send(newPlainMessage(chatID,
 				fmt.Sprintf("✅ Сегодняшний план выполнен (%d/%d).\n\n"+
 					"Чтобы открыть новые имена:\n"+
 					"• Увеличьте «имён в день» в /settings\n"+
 					"• Или дождитесь следующего дня",
-					len(todayNames), namesPerDay))
-			return h.send(msg)
+					len(todayNames), namesPerDay)))
 
 		default:
 			return h.send(newPlainMessage(chatID, msgNameUnavailable))
@@ -153,14 +216,14 @@ func (h *Handler) handleNext(userID int64) HandlerFunc {
 }
 
 // introduceOne introduces one new name and adds it to today's plan.
-func (h *Handler) introduceOne(ctx context.Context, userID, chatID int64) error {
+func (h *Handler) introduceOne(ctx context.Context, userID, chatID int64, prefix, suffix string) (int, error) {
 	newNums, err := h.progressService.GetNewNames(ctx, userID, 1)
 	if err != nil {
 		h.logger.Error("failed to get new names", zap.Error(err))
-		return h.send(newPlainMessage(chatID, msgNameUnavailable))
+		return 0, h.send(newPlainMessage(chatID, msgNameUnavailable))
 	}
 	if len(newNums) == 0 {
-		return h.send(newPlainMessage(chatID,
+		return 0, h.send(newPlainMessage(chatID,
 			"🎉 Вы уже начали изучение всех 99 имён!\n\nИспользуйте /quiz для повторения."))
 	}
 
@@ -168,14 +231,14 @@ func (h *Handler) introduceOne(ctx context.Context, userID, chatID int64) error 
 
 	if err := h.progressService.IntroduceName(ctx, userID, newNum); err != nil {
 		h.logger.Error("failed to mark name as introduced", zap.Error(err))
-		return h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении прогресса"))
+		return 0, h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении прогресса"))
 	}
 	if err := h.dailyNameService.AddTodayName(ctx, userID, newNum); err != nil {
 		h.logger.Error("failed to add today name", zap.Error(err))
-		return h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении дневного плана"))
+		return 0, h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении дневного плана"))
 	}
 
-	return h.sendNameCard(ctx, chatID, 0, newNum)
+	return newNum, nil
 }
 
 type TodayState int
@@ -353,7 +416,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 
 			msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 				return h.nameService.GetByNumber(ctx, name.Number)
-			}, chatID)
+			}, chatID, "", "")
 			if err != nil {
 				return err
 			}
@@ -373,16 +436,16 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 
 		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 			return h.nameService.GetByNumber(ctx, nameNumber)
-		}, chatID)
+		}, chatID, "", "")
 		if err != nil {
 			return err
 		}
 
-		if err = h.send(msg); err != nil {
-			return err
-		}
 		if audio != nil {
 			_ = h.send(*audio)
+		}
+		if err = h.send(msg); err != nil {
+			return err
 		}
 
 		return nil
@@ -508,6 +571,11 @@ func (h *Handler) handleSettings(userID int64) HandlerFunc {
 // handleQuiz starts a quiz for the user.
 func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
+		isFirstQuiz, err := h.quizService.IsFirstQuiz(ctx, userID)
+		if err != nil {
+			return err
+		}
+
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil {
 			h.logger.Error("failed to get settings for quiz",
@@ -546,7 +614,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			}
 
 			_ = h.send(newMessage(chatID, md("📝 Продолжаем квиз...")))
-			return h.sendQuizQuestionFromDB(chatID, activeSession, q, name, activeSession.CurrentQuestionNum)
+			return h.sendQuizQuestionFromDB(ctx, userID, chatID, activeSession, q, name, activeSession.CurrentQuestionNum, isFirstQuiz)
 		}
 
 		// Start new quiz session
@@ -609,7 +677,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			return h.send(newPlainMessage(chatID, msgQuizUnavailable))
 		}
 
-		return h.sendQuizQuestionFromDB(chatID, session, q, name, 1)
+		return h.sendQuizQuestionFromDB(ctx, userID, chatID, session, q, name, 1, isFirstQuiz)
 	}
 }
 

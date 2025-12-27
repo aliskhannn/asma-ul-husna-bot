@@ -60,7 +60,7 @@ func NewUserReminders(userID int64) *UserReminders {
 	now := time.Now()
 	return &UserReminders{
 		UserID:        userID,
-		IsEnabled:     true,
+		IsEnabled:     false,
 		IntervalHours: 1,
 		StartTime:     "08:00:00",
 		EndTime:       "20:00:00",
