@@ -32,8 +32,12 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 		h.withCallbackErrorHandling(h.handleProgressCallback)(ctx, cb)
 	case actionReminder:
 		h.withCallbackErrorHandling(h.handleReminderCallback)(ctx, cb)
+	case actionOnboarding:
+		h.withCallbackErrorHandling(h.handleOnboardingCallback)(ctx, cb)
 	case actionReset:
 		h.withCallbackErrorHandling(h.handleResetCallback)(ctx, cb)
+	case actionNext:
+		h.withCallbackErrorHandling(h.handleNextCallback)(ctx, cb)
 	default:
 		h.logger.Warn("unknown callback action",
 			zap.String("action", data.Action),
@@ -160,6 +164,39 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 	}
 
 	return h.send(edit)
+}
+
+func (h *Handler) handleNextCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
+		return nil
+	}
+
+	h.removeInlineKeyboard(cb.Message.Chat.ID, cb.Message.MessageID)
+
+	data := decodeCallback(cb.Data)
+
+	if len(data.Params) == 0 {
+		return nil
+	}
+	sub := data.Params[0]
+
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+
+	switch sub {
+	case nextQuiz:
+		return h.handleQuiz(userID)(ctx, chatID)
+
+	case nextToday:
+		return h.handleToday(userID)(ctx, chatID)
+
+	case nextSettings:
+		return h.handleSettings(userID)(ctx, chatID)
+
+	default:
+		h.logger.Warn("unknown next sub-action", zap.String("sub", sub), zap.String("raw", data.Raw))
+		return nil
+	}
 }
 
 // handleSettingsCallback handles all settings-related callbacks.
@@ -591,7 +628,7 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 		return nil
 	}
 
-	err = h.sendQuizQuestionFromDB(chatID, session, question, nextName, nextQuestionNum)
+	err = h.sendQuizQuestionFromDB(ctx, userID, chatID, session, question, nextName, nextQuestionNum, false)
 	if err != nil {
 		h.logger.Error("failed to send next question", zap.Error(err))
 	}
@@ -617,6 +654,141 @@ func (h *Handler) handleProgressCallback(ctx context.Context, cb *tgbotapi.Callb
 	}
 
 	return h.send(edit)
+}
+
+func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
+		return nil
+	}
+
+	data := decodeCallback(cb.Data)
+	if len(data.Params) < 1 {
+		return nil
+	}
+
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+
+	sub := data.Params[0]
+
+	switch sub {
+
+	case onboardingStep:
+		if len(data.Params) != 2 {
+			return nil
+		}
+		step, err := strconv.Atoi(data.Params[1])
+		if err != nil {
+			return nil
+		}
+
+		var text string
+		var kb *tgbotapi.InlineKeyboardMarkup
+
+		switch step {
+		case 2:
+			text = onboardingStep2Message()
+			k := onboardingStep2Keyboard()
+			kb = &k
+		case 3:
+			text = onboardingStep3Message()
+			k := onboardingStep3Keyboard()
+			kb = &k
+		case 4:
+			text = onboardingStep4Message()
+			k := onboardingStep4Keyboard()
+			kb = &k
+		default:
+			text = onboardingStep1Message()
+			k := onboardingStep1Keyboard()
+			kb = &k
+		}
+
+		edit := newEdit(chatID, cb.Message.MessageID, text)
+		if kb != nil {
+			edit.ReplyMarkup = kb
+		}
+		return h.send(edit)
+
+	case onboardingNames:
+		if len(data.Params) != 2 {
+			return nil
+		}
+		n, err := strconv.Atoi(data.Params[1])
+		if err != nil {
+			return nil
+		}
+
+		if err := h.settingsService.UpdateNamesPerDay(ctx, userID, n); err != nil {
+			return err
+		}
+
+		edit := newEdit(chatID, cb.Message.MessageID, onboardingStep3Message())
+		kb := onboardingStep3Keyboard()
+		edit.ReplyMarkup = &kb
+		return h.send(edit)
+
+	case onboardingMode:
+		if len(data.Params) != 2 {
+			return nil
+		}
+		mode := data.Params[1] // guided/free
+
+		if err := h.settingsService.UpdateLearningMode(ctx, userID, mode); err != nil {
+			return err
+		}
+
+		edit := newEdit(chatID, cb.Message.MessageID, onboardingStep4Message())
+		kb := onboardingStep4Keyboard()
+		edit.ReplyMarkup = &kb
+		return h.send(edit)
+
+	case onboardingReminders:
+		if len(data.Params) != 2 {
+			return nil
+		}
+		choice := data.Params[1] // yes/no
+
+		if choice == "yes" {
+			rem, err := h.reminderService.GetOrCreate(ctx, userID)
+			if err != nil {
+				return err
+			}
+
+			if rem == nil || !rem.IsEnabled {
+				if err := h.reminderService.ToggleReminder(ctx, userID); err != nil {
+					return err
+				}
+				rem, err = h.reminderService.GetByUserID(ctx, userID)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		edit := newEdit(chatID, cb.Message.MessageID, onboardingCompleteMessage())
+		kb := onboardingCompleteKeyboard()
+		edit.ReplyMarkup = &kb
+		return h.send(edit)
+
+	case onboardingCmd:
+		if len(data.Params) != 2 {
+			return nil
+		}
+		cmd := data.Params[1]
+		_ = h.send(tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID))
+
+		switch cmd {
+		case "next":
+			return h.handleNext(userID)(ctx, chatID)
+		case "all":
+			return h.handleAll()(ctx, chatID)
+		default:
+			return nil
+		}
+	}
+
+	return nil
 }
 
 func (h *Handler) handleResetCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {

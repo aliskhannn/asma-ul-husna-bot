@@ -267,3 +267,18 @@ func (r *QuizRepository) AbandonOldSessions(ctx context.Context, userID int64) e
 
 	return nil
 }
+
+func (r *QuizRepository) IsFirstQuiz(ctx context.Context, userID int64) (bool, error) {
+	const q = `
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM quiz_sessions
+            WHERE user_id = $1
+        )
+    `
+	var first bool
+	if err := r.db.QueryRow(ctx, q, userID).Scan(&first); err != nil {
+		return false, err
+	}
+	return first, nil
+}

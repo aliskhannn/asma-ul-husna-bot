@@ -7,12 +7,15 @@ import (
 
 // Callback action constants.
 const (
-	actionName     = "name"
-	actionRange    = "range"
-	actionSettings = "settings"
-	actionQuiz     = "quiz"
-	actionProgress = "progress"
-	actionReminder = "reminder"
+	actionName       = "name"
+	actionRange      = "range"
+	actionSettings   = "settings"
+	actionQuiz       = "quiz"
+	actionProgress   = "progress"
+	actionReminder   = "reminder"
+	actionOnboarding = "onboarding"
+	actionReset      = "reset"
+	actionNext       = "next"
 )
 
 // Settings sub-actions.
@@ -37,13 +40,25 @@ const (
 	quizStart = "start"
 )
 
+// Onboarding sub-actions.
 const (
-	actionReset = "reset"
+	onboardingStep      = "step"
+	onboardingNames     = "names"
+	onboardingMode      = "mode"
+	onboardingReminders = "reminders"
+	onboardingCmd       = "cmd"
 )
 
 const (
 	resetConfirm = "confirm"
 	resetCancel  = "cancel"
+)
+
+// Next sub-actions.
+const (
+	nextQuiz     = "quiz"
+	nextToday    = "today"
+	nextSettings = "settings"
 )
 
 // callbackData represents structured callback data.
@@ -159,6 +174,41 @@ func buildReminderDisableCallback() string {
 	}.encode()
 }
 
+func buildOnboardingStepCallback(step int) string {
+	return callbackData{
+		Action: actionOnboarding,
+		Params: []string{onboardingStep, strconv.Itoa(step)},
+	}.encode()
+}
+
+func buildOnboardingNamesPerDayCallback(n int) string {
+	return callbackData{
+		Action: actionOnboarding,
+		Params: []string{onboardingNames, strconv.Itoa(n)},
+	}.encode()
+}
+
+func buildOnboardingModeCallback(mode string) string {
+	return callbackData{
+		Action: actionOnboarding,
+		Params: []string{onboardingMode, mode}, // guided/free
+	}.encode()
+}
+
+func buildOnboardingRemindersCallback(choice string) string {
+	return callbackData{
+		Action: actionOnboarding,
+		Params: []string{onboardingReminders, choice}, // yes/no
+	}.encode()
+}
+
+func buildOnboardingCmdCallback(cmd string) string {
+	return callbackData{
+		Action: actionOnboarding,
+		Params: []string{onboardingCmd, cmd}, // next/all
+	}.encode()
+}
+
 func buildResetConfirmCallback() string {
 	return callbackData{Action: actionReset, Params: []string{resetConfirm}}.encode()
 }
@@ -166,3 +216,16 @@ func buildResetConfirmCallback() string {
 func buildResetCancelCallback() string {
 	return callbackData{Action: actionReset, Params: []string{resetCancel}}.encode()
 }
+
+func buildNextCallback(subAction string, value ...string) string {
+	params := []string{subAction}
+	params = append(params, value...)
+	return callbackData{
+		Action: actionNext,
+		Params: params,
+	}.encode()
+}
+
+func buildNextQuizCallback() string     { return buildNextCallback(nextQuiz) }
+func buildNextTodayCallback() string    { return buildNextCallback(nextToday) }
+func buildNextSettingsCallback() string { return buildNextCallback(nextSettings) }

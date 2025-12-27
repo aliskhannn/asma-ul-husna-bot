@@ -99,17 +99,6 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	)
 
 	from := update.Message.From
-	err := h.userService.EnsureUser(
-		ctx,
-		from.ID,
-		update.Message.Chat.ID,
-	)
-	if err != nil {
-		h.logger.Error("failed to ensure user",
-			zap.Int64("user_id", from.ID),
-			zap.Error(err),
-		)
-	}
 
 	chatID := update.Message.Chat.ID
 	cmdArgs := update.Message.CommandArguments()
@@ -117,12 +106,7 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
-			msg := newMessage(chatID, welcomeMessage())
-			if err := h.send(msg); err != nil {
-				h.logger.Error("failed to send start message",
-					zap.Error(err),
-				)
-			}
+			_ = h.withErrorHandling(h.handleStart(from.ID))(ctx, chatID)
 
 		case "next":
 			_ = h.withErrorHandling(h.handleNext(from.ID))(ctx, chatID)
@@ -200,12 +184,21 @@ func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) e
 
 // sendQuizQuestionFromDB sends a quiz question from database with answer buttons.
 func (h *Handler) sendQuizQuestionFromDB(
+	ctx context.Context,
+	userID int64,
 	chatID int64,
 	session *entities.QuizSession,
 	question *entities.QuizQuestion,
 	name *entities.Name,
 	currentNum int,
+	isFirstQuiz bool,
 ) error {
+	if isFirstQuiz && currentNum == 1 {
+		if err := h.send(newMessage(chatID, buildFirstQuizMessage())); err != nil {
+			return err
+		}
+	}
+
 	// Build question text
 	questionText := buildQuizQuestionText(question, name, currentNum, session.TotalQuestions)
 
@@ -226,22 +219,74 @@ func (h *Handler) sendQuizQuestionFromDB(
 }
 
 func (h *Handler) sendNameCard(ctx context.Context, chatID int64, messageID int, nameNumber int) error {
+	return h.sendNameCardWithPrefix(ctx, chatID, messageID, "", nameNumber, "", "")
+}
+
+func (h *Handler) sendNameCardWithPrefix(ctx context.Context, chatID int64, messageID int, cmd string, nameNumber int, prefix, suffix string) error {
 	msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 		return h.nameService.GetByNumber(ctx, nameNumber)
-	}, chatID)
+	}, chatID, prefix, suffix)
 	if err != nil {
 		return err
 	}
 
+	if cmd == "next" {
+		msg.ReplyMarkup = nextCardKeyboard()
+	}
+
 	_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, messageID))
 
-	if err := h.send(msg); err != nil {
-		return err
-	}
 	if audio != nil {
 		_ = h.send(*audio)
 	}
+	if err := h.send(msg); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (h *Handler) sendNextLimitReached(chatID int64, introducedToday, namesPerDay int) error {
+	var sb strings.Builder
+
+	sb.WriteString(md("✅ Вы достигли дневного лимита ("))
+	sb.WriteString(bold(fmt.Sprintf("%d/%d", introducedToday, namesPerDay)))
+	sb.WriteString(md(")\n\n"))
+
+	sb.WriteString(md("Что можно сделать дальше:\n"))
+	sb.WriteString(md("• Нажмите "))
+	sb.WriteString(bold("«🧠 Квиз»"))
+	sb.WriteString(md(" — закрепить сегодняшние имена\n"))
+
+	sb.WriteString(md("• Нажмите "))
+	sb.WriteString(bold("«📅 Сегодня»"))
+	sb.WriteString(md(" — посмотреть план\n"))
+
+	sb.WriteString(md("• Нажмите "))
+	sb.WriteString(bold("«⚙️ Настройки»"))
+	sb.WriteString(md(" — увеличить лимит «Имён в день»\n\n"))
+
+	sb.WriteString(md("Вернитесь завтра за новыми именами!"))
+
+	msg := newMessage(chatID, sb.String())
+	kb := nextCardKeyboard()
+	msg.ReplyMarkup = kb
+
+	return h.send(msg)
+}
+
+func (h *Handler) sendNextBlockedNeedQuiz(chatID int64, namesPerDay int) error {
+	text := fmt.Sprintf(
+		"📚 Сегодня вы уже изучаете %d %s.\n\n"+
+			"Нажмите кнопку «🧠 Квиз»: нужно 2 правильных ответа, чтобы открыть следующее имя.\n\n"+
+			"💡 Или откройте «⚙️ Настройки» и увеличьте лимит «Имён в день».",
+		namesPerDay, formatNamesCount(namesPerDay),
+	)
+
+	msg := newMessage(chatID, md(text))
+	kb := nextCardKeyboard()
+	msg.ReplyMarkup = kb
+
+	return h.send(msg)
 }
 
 // sendTodayList sends a formatted list of today's names with their learning status.
@@ -269,9 +314,9 @@ func (h *Handler) sendTodayList(ctx context.Context, chatID int64, userID int64,
 		streak, err := h.progressService.GetStreak(ctx, userID, nameNumber)
 		if err == nil && streak >= 7 {
 			learnedCount++
-			sb.WriteString(fmt.Sprintf("✅ %d\\. %s\n", i+1, md(name.Translation)))
+			sb.WriteString(fmt.Sprintf("✅ %d\\. %s\n", i+1, bold(name.Translation)))
 		} else {
-			sb.WriteString(fmt.Sprintf("⏳ %d\\. %s\n", i+1, md(name.Translation)))
+			sb.WriteString(fmt.Sprintf("⏳ %d\\. %s\n", i+1, bold(name.Translation)))
 		}
 	}
 
@@ -284,7 +329,7 @@ func (h *Handler) sendTodayList(ctx context.Context, chatID int64, userID int64,
 				namesPerDay-len(todayNames)))
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("⏳ *Прогресс:* %d/%d изучено\n\n",
+		sb.WriteString(fmt.Sprintf("⏳ Прогресс: %d/%d изучено\n\n",
 			learnedCount, len(todayNames)))
 		sb.WriteString("Используйте /next чтобы продолжить\\.")
 	}
@@ -302,4 +347,12 @@ func (h *Handler) SendReminder(chatID int64, payload entities.ReminderPayload) e
 	msg.ReplyMarkup = keyboard
 
 	return h.send(msg)
+}
+
+func (h *Handler) removeInlineKeyboard(chatID int64, messageID int) {
+	edit := tgbotapi.NewEditMessageReplyMarkup(
+		chatID, messageID,
+		tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+	)
+	_, _ = h.bot.Request(edit)
 }

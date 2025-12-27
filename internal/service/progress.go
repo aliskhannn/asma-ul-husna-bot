@@ -142,3 +142,7 @@ func (s *ProgressService) GetNewNames(ctx context.Context, userID int64, limit i
 
 	return names, nil
 }
+
+func (s *ProgressService) CountIntroducedToday(ctx context.Context, userID int64, tz string) (int, error) {
+	return s.progressRepo.CountIntroducedOnDate(ctx, userID, tz)
+}

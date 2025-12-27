@@ -13,7 +13,7 @@ import (
 // UserRepository defines operations for user persistence.
 type UserRepository interface {
 	// Save inserts a new user or updates an existing one in the database.
-	Save(ctx context.Context, user *entities.User) error
+	Save(ctx context.Context, user *entities.User) (bool, error)
 	// Exists checks if a user with the given ID exists.
 	Exists(ctx context.Context, userID int64) (bool, error)
 }
@@ -47,6 +47,7 @@ type ProgressRepository interface {
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
 	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
+	CountIntroducedOnDate(ctx context.Context, userID int64, tz string) (int, error)
 }
 
 // QuizRepository defines operations for quiz session and answer persistence.
@@ -59,6 +60,7 @@ type QuizRepository interface {
 	SaveAnswer(ctx context.Context, answer *entities.QuizAnswer) error
 	UpdateSession(ctx context.Context, session *entities.QuizSession) error
 	GetActiveSessionByUserID(ctx context.Context, userID int64) (*entities.QuizSession, error)
+	IsFirstQuiz(ctx context.Context, userID int64) (bool, error)
 }
 
 // SettingsRepository defines operations for user settings persistence.

@@ -10,7 +10,8 @@ import (
 
 // UserService interface for user-related operations.
 type UserService interface {
-	EnsureUser(ctx context.Context, userID, chatID int64) error
+	EnsureUser(ctx context.Context, userID, chatID int64) (bool, error)
+	Exists(ctx context.Context, userID int64) (bool, error)
 }
 
 // NameService interface for name-related operations.
@@ -27,6 +28,7 @@ type ProgressService interface {
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
 	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
+	CountIntroducedToday(ctx context.Context, userID int64, tz string) (int, error)
 }
 
 // SettingsService interface for settings-related operations.
@@ -43,6 +45,7 @@ type QuizService interface {
 	GetCurrentQuestion(ctx context.Context, sessionID int64, questionNum int) (*entities.QuizQuestion, *entities.Name, error)
 	StartQuizSession(ctx context.Context, userID int64, totalQuestions int) (*entities.QuizSession, []entities.Name, error)
 	SubmitAnswer(ctx context.Context, sessionID int64, userID int64, selectedOption string) (*service.AnswerResult, error)
+	IsFirstQuiz(ctx context.Context, userID int64) (bool, error)
 }
 
 // ReminderService interface for reminder-related operations.

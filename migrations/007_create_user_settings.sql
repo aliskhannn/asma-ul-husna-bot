@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS user_settings
 (
     user_id             bigint PRIMARY KEY,
-    names_per_day       smallint             DEFAULT 1 CHECK (names_per_day BETWEEN 1 AND 20),
+    names_per_day       smallint             DEFAULT 1 CHECK (names_per_day IN (1, 2, 3, 5)),
     max_reviews_per_day smallint             DEFAULT 50 CHECK (max_reviews_per_day BETWEEN 10 AND 200),
     quiz_mode           varchar(20)          DEFAULT 'mixed' CHECK (quiz_mode IN ('new', 'review', 'mixed')),
     learning_mode       varchar(20)          DEFAULT 'guided' CHECK (learning_mode IN ('guided', 'free')),

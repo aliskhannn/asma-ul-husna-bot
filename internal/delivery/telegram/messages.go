@@ -115,149 +115,91 @@ func msgNoNewNames() string {
 }
 
 // welcomeMessage builds welcome message safely for MarkdownV2.
-func welcomeMessage() string {
+// welcomeMessage builds welcome message safely for MarkdownV2.
+func welcomeMessage(isNewUser bool, stats *service.ProgressSummary) string {
 	var sb strings.Builder
 
 	sb.WriteString(md("السلام عليكم ورحمة الله وبركاته"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(md("Абу Хурайра, да будет доволен им Аллах, передаёт, что Посланник Аллаха ﷺ сказал: «Поистине, у Аллаха девяносто девять имён — сотня без одного, и каждый, кто запомнит их, войдёт в Рай. Поистине, Он (— это Тот, Кто) не имеет пары /витр/, и Он любит (всё) непарное». (Аль-Бухари, 6410)"))
-	sb.WriteString("\n\n")
+	// returning user
+	if !isNewUser && stats != nil {
+		sb.WriteString(bold("С возвращением!"))
+		sb.WriteString("\n\n")
+		sb.WriteString(md(fmt.Sprintf("📊 Ваш прогресс: %d/99 имён выучено (%.1f%%)",
+			stats.Learned, stats.Percentage)))
+		sb.WriteString("\n\n")
 
-	sb.WriteString(bold("Asma ul Husna Bot"))
-	sb.WriteString(md(" поможет вам в изучении "))
-	sb.WriteString(bold("99 имён Алла́ха"))
-	sb.WriteString(md(" (асма̄'у -лла̄һи ль-х̣усна̄ — «прекраснейшие имена Аллаха»)."))
-	sb.WriteString("\n\n")
+		if stats.DueToday > 0 {
+			sb.WriteString(md(fmt.Sprintf("🔄 Сегодня на повторение: %d %s",
+				stats.DueToday, formatNamesCount(stats.DueToday))))
+			sb.WriteString("\n\n")
+			sb.WriteString(bold("Продолжайте с кнопок ниже"))
+		} else {
+			sb.WriteString(bold("Начните с кнопок ниже"))
+		}
 
-	sb.WriteString(md("С нами вы сможете:"))
-	sb.WriteString("\n\n")
+		return sb.String()
+	}
 
-	sb.WriteString(md("📖 Изучать каждое имя с "))
-	sb.WriteString(bold("переводом"))
-	sb.WriteString(md(", "))
-	sb.WriteString(bold("транслитерацией"))
-	sb.WriteString(md(" и "))
-	sb.WriteString(bold("аудиопроизношением"))
-	sb.WriteString(md("."))
-	sb.WriteString("\n")
-
-	sb.WriteString(md("⏰ Настроить "))
-	sb.WriteString(bold("гибкие напоминания"))
-	sb.WriteString(md(" для ежедневного повторения."))
-	sb.WriteString("\n")
-
-	sb.WriteString(md("🧠 Проходить "))
-	sb.WriteString(bold("квизы"))
-	sb.WriteString(md(" для проверки и отслеживания прогресса."))
-	sb.WriteString("\n\n")
-
-	sb.WriteString(bold("Чтобы начать:"))
-	sb.WriteString("\n\n")
-
-	sb.WriteString(md("• /next — "))
-	sb.WriteString(bold("показать следующее имя/ввести новое"))
-	sb.WriteString("\n")
-	sb.WriteString(md("• /today — "))
-	sb.WriteString(bold("список всех имён на сегодня"))
-	sb.WriteString("\n")
-	sb.WriteString(md("• /quiz — "))
-	sb.WriteString(bold("квиз по введённым сегодня именам"))
-	sb.WriteString("\n")
-	sb.WriteString(md("• 1-99 — просмотр конкретного имени (ознакомление)"))
-	sb.WriteString("\n\n")
-
-	sb.WriteString(md("💡 "))
-	sb.WriteString(bold("Совет:"))
-	sb.WriteString(md(" "))
-	sb.WriteString(bold("/next → /today → /quiz"))
-	sb.WriteString(md(" — идеальный цикл изучения!"))
-	sb.WriteString("\n\n")
-
-	sb.WriteString(md("Начните свой путь к знанию прямо сейчас!"))
-
-	return sb.String()
+	return onboardingStep1Message()
 }
 
 func helpMessage() string {
 	var sb strings.Builder
 
-	sb.WriteString("🤖 ")
-	sb.WriteString(bold("Доступные команды"))
+	sb.WriteString("🤲 ")
+	sb.WriteString(bold("Как пользоваться ботом"))
 	sb.WriteString("\n\n")
 
-	// Learning.
+	// Quick start
+	sb.WriteString("⚡ ")
+	sb.WriteString(bold("Быстрый старт:"))
+	sb.WriteString("\n")
+	sb.WriteString(bold("/next → /quiz → /today"))
+	sb.WriteString(md(" — идеальный цикл!"))
+	sb.WriteString("\n\n")
+
+	// Learning section
 	sb.WriteString("📚 ")
 	sb.WriteString(bold("Изучение:"))
 	sb.WriteString("\n")
 	sb.WriteString("/next — ")
-	sb.WriteString(bold("показать следующее имя/ввести новое"))
-	sb.WriteString("\n")
-	sb.WriteString("/today — ")
-	sb.WriteString(bold("список имён на сегодня"))
+	sb.WriteString(md("ввести новое имя (ограничено квотой в день)"))
 	sb.WriteString("\n")
 	sb.WriteString("/quiz — ")
-	sb.WriteString(bold("пройти квиз по изучаемым именам"))
+	sb.WriteString(md("проверить знания"))
 	sb.WriteString("\n")
-	sb.WriteString("/random — ")
-	sb.WriteString(bold("случайное имя"))
-	sb.WriteString(md(" (guided — из /today, free — из всех 99)"))
+	sb.WriteString("/today — ")
+	sb.WriteString(md("все имена на сегодня"))
 	sb.WriteString("\n\n")
 
-	// Browse.
-	sb.WriteString("📖 ")
-	sb.WriteString(bold("Просмотр:"))
+	// Browse section
+	sb.WriteString("👀 ")
+	sb.WriteString(bold("Просто посмотреть (без влияния на прогресс):"))
 	sb.WriteString("\n")
 	sb.WriteString("/all — ")
-	sb.WriteString(bold("показать все 99 имён"))
+	sb.WriteString(md("листать все 99 имён"))
 	sb.WriteString("\n")
-	sb.WriteString("/range N M — ")
-	sb.WriteString(bold("имена с N по M"))
-	sb.WriteString(md(" (например, /range 1 10)"))
+	sb.WriteString("/random — ")
+	sb.WriteString(md("случайное имя"))
 	sb.WriteString("\n")
 	sb.WriteString("1\\-99 — ")
-	sb.WriteString(bold("просмотр конкретного имени"))
-	sb.WriteString(md(" (ознакомление)"))
+	sb.WriteString(md("конкретное имя по номеру"))
 	sb.WriteString("\n\n")
 
-	// Progress.
-	sb.WriteString("📊 ")
-	sb.WriteString(bold("Прогресс:"))
-	sb.WriteString("\n")
-	sb.WriteString("/progress — ")
-	sb.WriteString(bold("посмотреть статистику"))
-	sb.WriteString("\n\n")
-
-	// Settings.
+	// Progress and settings
 	sb.WriteString("⚙️ ")
 	sb.WriteString(bold("Настройки:"))
 	sb.WriteString("\n")
+	sb.WriteString("/progress — ")
+	sb.WriteString(md("статистика"))
+	sb.WriteString("\n")
 	sb.WriteString("/settings — ")
-	sb.WriteString(bold("режим обучения, квиз, напоминания, имён в день"))
-	sb.WriteString("\n")
-	sb.WriteString("/help — ")
-	sb.WriteString(bold("показать эту справку"))
-	sb.WriteString("\n")
-	sb.WriteString("/reset — ")
-	sb.WriteString(bold("сбросить прогресс"))
+	sb.WriteString(md("режим, квоты, напоминания"))
 	sb.WriteString("\n\n")
 
-	// Tips.
-	sb.WriteString("💡 ")
-	sb.WriteString(bold("Как использовать:"))
-	sb.WriteString("\n")
-	sb.WriteString("• ")
-	sb.WriteString(bold("/next → /today → /quiz"))
-	sb.WriteString(md(" — идеальный цикл изучения!"))
-	sb.WriteString("\n")
-	sb.WriteString("• ")
-	sb.WriteString(md("/random и номера "))
-	sb.WriteString("\\(1\\-99\\) ")
-	sb.WriteString(bold("не влияют"))
-	sb.WriteString(md(" на прогресс"))
-	sb.WriteString("\n")
-	sb.WriteString("• ")
-	sb.WriteString(md("Напоминания помогают не забывать про повторение и могут вводить новые имена (в зависимости от режима и квоты)."))
+	sb.WriteString(md("❓ Остались вопросы? Напишите @your_support"))
 
 	return sb.String()
 }
@@ -300,6 +242,28 @@ func learningModeDescription() string {
 	return sb.String()
 }
 
+func nextFirstTimeIntroMessage(namesPerDay int) string {
+	var sb strings.Builder
+	sb.WriteString(md("📚 "))
+	sb.WriteString(bold("Команда /next вводит новые имена для изучения"))
+	sb.WriteString("\n\n")
+	sb.WriteString(md("Вы можете вводить "))
+	sb.WriteString(bold(fmt.Sprintf("%d %s в день", namesPerDay, formatNamesCount(namesPerDay))))
+	sb.WriteString("\n\n")
+	sb.WriteString(md("💡 Чтобы просто посмотреть все 99 имён без изучения, используйте /all"))
+	return sb.String()
+}
+
+func nextHintMessage() string {
+	var sb strings.Builder
+
+	sb.WriteString(md("💡 Чтобы открыть новое имя: нажмите"))
+	sb.WriteString(bold("«🧠 Квиз»"))
+	sb.WriteString(md(" — и ответьте правильно 2 раза."))
+
+	return sb.String()
+}
+
 func formatLearningMode(mode entities.LearningMode) string {
 	switch mode {
 	case entities.ModeGuided:
@@ -312,8 +276,17 @@ func formatLearningMode(mode entities.LearningMode) string {
 }
 
 // formatNameMessage formats a single name message (MarkdownV2 safe).
-func formatNameMessage(name *entities.Name) string {
-	return fmt.Sprintf(
+func formatNameMessage(prefix, suffix string, name *entities.Name) string {
+	var sb strings.Builder
+
+	if prefix != "" {
+		sb.WriteString(prefix)
+		if !strings.HasSuffix(prefix, "\n\n") {
+			sb.WriteString("\n\n")
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf(
 		"%s%s%s %s\n\n%s %s\n%s %s\n\n%s %s",
 		lrm,
 		md(fmt.Sprintf("%d", name.Number)),
@@ -325,7 +298,14 @@ func formatNameMessage(name *entities.Name) string {
 		bold(name.Translation),
 		md("Значение:"),
 		bold(name.Meaning),
-	)
+	))
+
+	if suffix != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(suffix)
+	}
+
+	return sb.String()
 }
 
 // buildNameResponse builds name message and optional audio.
@@ -333,6 +313,7 @@ func buildNameResponse(
 	ctx context.Context,
 	get func(ctx2 context.Context) (*entities.Name, error),
 	chatID int64,
+	prefix, suffix string,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig, error) {
 	name, err := get(ctx)
 	if err != nil {
@@ -350,7 +331,7 @@ func buildNameResponse(
 		return msg, nil, err
 	}
 
-	msg := newMessage(chatID, formatNameMessage(name))
+	msg := newMessage(chatID, formatNameMessage(prefix, suffix, name))
 
 	if name.Audio == "" {
 		return msg, nil, nil
@@ -381,7 +362,7 @@ func buildNamesPage(names []*entities.Name, page int) (text string, totalPages i
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
-		b.WriteString(formatNameMessage(name))
+		b.WriteString(formatNameMessage("", "", name))
 	}
 
 	return b.String(), totalPages
@@ -414,7 +395,7 @@ func buildRangePages(names []*entities.Name, from, to int) (pages []string) {
 			if i > 0 {
 				b.WriteString("\n\n")
 			}
-			b.WriteString(formatNameMessage(name))
+			b.WriteString(formatNameMessage("", "", name))
 		}
 
 		pages = append(pages, b.String())
@@ -480,6 +461,13 @@ func buildQuizStartMessage(mode string) string {
 		bold(modeText),
 		md("Выберите правильный вариант ответа для каждого вопроса."),
 	)
+}
+
+func buildNextPrefix(introducedToday, namesPerDay, learnedTotal int) string {
+	return md(fmt.Sprintf(
+		"📊 Новых сегодня: %d/%d | Всего выучено: %d/99",
+		introducedToday, namesPerDay, learnedTotal,
+	))
 }
 
 // formatQuizMode formats quiz mode for display.
@@ -687,7 +675,7 @@ func buildReminderNotification(payload entities.ReminderPayload) string {
 
 	sb.WriteString("\n\n")
 
-	sb.WriteString(formatNameMessage(&payload.Name))
+	sb.WriteString(formatNameMessage("", "", &payload.Name))
 	sb.WriteString("\n\n")
 
 	sb.WriteString("━━━━━━━━━━━━━━━━\n")
@@ -713,8 +701,30 @@ func buildReminderNotification(payload entities.ReminderPayload) string {
 	return sb.String()
 }
 
+func buildFirstQuizMessage() string {
+	var sb strings.Builder
+
+	sb.WriteString(md("💡 "))
+	sb.WriteString(bold("Как работает квиз:"))
+	sb.WriteString("\n")
+	sb.WriteString(md("• Выберите правильный ответ из вариантов\n"))
+	sb.WriteString(md("• 2+ правильных ответа = имя начнёт изучаться\n"))
+	sb.WriteString(md("• Я буду повторять имена по графику"))
+
+	return sb.String()
+}
+
 // buildQuizQuestionText formats quiz question text from database question.
-func buildQuizQuestionText(question *entities.QuizQuestion, name *entities.Name, currentNum, totalQuestions int) string {
+func buildQuizQuestionText(
+	question *entities.QuizQuestion,
+	name *entities.Name,
+	currentNum, totalQuestions int,
+) string {
+	var sb strings.Builder
+
+	sb.WriteString(md(fmt.Sprintf("Вопрос %d из %d", currentNum, totalQuestions)))
+	sb.WriteString("\n\n")
+
 	var questionPrompt string
 	switch question.QuestionType {
 	case string(entities.QuestionTypeTranslation):
@@ -729,11 +739,9 @@ func buildQuizQuestionText(question *entities.QuizQuestion, name *entities.Name,
 		questionPrompt = name.ArabicName
 	}
 
-	return fmt.Sprintf(
-		"%s\n\n%s",
-		md(fmt.Sprintf("Вопрос %d из %d", currentNum, totalQuestions)),
-		bold(questionPrompt),
-	)
+	sb.WriteString(bold(questionPrompt))
+
+	return sb.String()
 }
 
 func formatNamesCount(n int) string {

@@ -24,21 +24,23 @@ func NewUserRepository(db postgres.DBTX) *UserRepository {
 }
 
 // Save inserts a new user or updates an existing one.
-func (r *UserRepository) Save(ctx context.Context, user *entities.User) error {
+func (r *UserRepository) Save(ctx context.Context, user *entities.User) (bool, error) {
 	query := `
 		INSERT INTO users (id, chat_id, is_active, created_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE SET
 			chat_id = EXCLUDED.chat_id,
 			is_active = EXCLUDED.is_active
+		RETURNING (xmax = 0) AS created
 	`
 
-	_, err := r.db.Exec(ctx, query, user.ID, user.ChatID, user.IsActive, user.CreatedAt)
+	var created bool
+	err := r.db.QueryRow(ctx, query, user.ID, user.ChatID, user.IsActive, user.CreatedAt).Scan(&created)
 	if err != nil {
-		return fmt.Errorf("save user: %w", err)
+		return false, fmt.Errorf("save user: %w", err)
 	}
 
-	return nil
+	return created, nil
 }
 
 // Exists checks if a user with the given ID exists in the database.

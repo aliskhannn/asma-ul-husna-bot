@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS user_reminders
 (
     user_id        bigint PRIMARY KEY,
-    is_enabled     boolean             DEFAULT TRUE,
+    is_enabled     boolean             DEFAULT FALSE,
     interval_hours smallint            DEFAULT 1 CHECK (interval_hours IN (1, 2, 3, 4)),
     start_time     varchar(8) NOT NULL DEFAULT '08:00:00',
     end_time       varchar(8) NOT NULL DEFAULT '20:00:00',
