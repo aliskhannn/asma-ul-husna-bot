@@ -521,9 +521,23 @@ func (s *ReminderService) SetReminderIntervalHours(ctx context.Context, userID i
 		}
 	}
 
+	tz := "UTC"
+	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
+	if err == nil && settings != nil && settings.Timezone != "" {
+		tz = settings.Timezone
+	}
+
+	if intervalHours <= 0 {
+		intervalHours = 1
+	}
+
 	reminder.IntervalHours = intervalHours
-	reminder.IsEnabled = true // Enable when setting interval
-	reminder.UpdatedAt = time.Now()
+	reminder.IsEnabled = true
+	reminder.UpdatedAt = time.Now().UTC()
+
+	// Recalculate next_send_at because interval changed
+	next := reminder.CalculateNextSendAt(tz, time.Now().UTC())
+	reminder.NextSendAt = &next
 
 	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
 		return fmt.Errorf("upsert reminder: %w", err)
@@ -532,6 +546,8 @@ func (s *ReminderService) SetReminderIntervalHours(ctx context.Context, userID i
 	s.logger.Info("reminder frequency set",
 		zap.Int64("user_id", userID),
 		zap.Int("interval_hours", intervalHours),
+		zap.String("timezone", tz),
+		zap.Time("next_send_at", next),
 	)
 
 	return nil
@@ -543,38 +559,7 @@ func (s *ReminderService) SetReminderTimeWindow(
 	userID int64,
 	startTime, endTime string,
 ) error {
-	var loc *time.Location
-
-	rwu, err := s.reminderRepo.GetDueReminder(ctx, userID)
-	if err != nil {
-		if errors.Is(err, repository.ErrReminderNotFound) {
-			loc, _ = time.LoadLocation("UTC")
-		} else {
-			return fmt.Errorf("get reminder: %w", err)
-		}
-	}
-
-	loc, err = time.LoadLocation(rwu.Timezone)
-	if err != nil {
-		return fmt.Errorf("invalid timezone: %w", err)
-	}
-
-	// Validate time format (HH:MM:SS)
-	start, err := time.ParseInLocation("15:04:05", startTime, loc)
-	if err != nil {
-		return fmt.Errorf("invalid start time format: %w", err)
-	}
-
-	end, err := time.ParseInLocation("15:04:05", endTime, loc)
-	if err != nil {
-		return fmt.Errorf("invalid end time format: %w", err)
-	}
-
-	// Validate that end time is after start time
-	if end.Before(start) {
-		return fmt.Errorf("end time must be after start time")
-	}
-
+	// 1) Load reminder or create defaults
 	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrReminderNotFound) {
@@ -584,10 +569,40 @@ func (s *ReminderService) SetReminderTimeWindow(
 		}
 	}
 
+	// 2) Get timezone from user settings (single source of truth)
+	tz := "UTC"
+	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
+	if err == nil && settings != nil && settings.Timezone != "" {
+		tz = settings.Timezone
+	}
+
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return fmt.Errorf("invalid timezone: %w", err)
+	}
+
+	// 3) Validate time format (HH:MM:SS)
+	start, err := time.ParseInLocation("15:04:05", startTime, loc)
+	if err != nil {
+		return fmt.Errorf("invalid start time format: %w", err)
+	}
+	end, err := time.ParseInLocation("15:04:05", endTime, loc)
+	if err != nil {
+		return fmt.Errorf("invalid end time format: %w", err)
+	}
+	if end.Before(start) {
+		return fmt.Errorf("end time must be after start time")
+	}
+
+	// 4) Apply changes + enable
 	reminder.StartTime = startTime
 	reminder.EndTime = endTime
-	reminder.IsEnabled = true // Enable when setting time window
+	reminder.IsEnabled = true
 	reminder.UpdatedAt = time.Now().UTC()
+
+	// 5) Recalculate next_send_at immediately (important!)
+	next := reminder.CalculateNextSendAt(tz, time.Now().UTC())
+	reminder.NextSendAt = &next
 
 	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
 		return fmt.Errorf("upsert reminder: %w", err)
@@ -595,8 +610,10 @@ func (s *ReminderService) SetReminderTimeWindow(
 
 	s.logger.Info("reminder time window set",
 		zap.Int64("user_id", userID),
+		zap.String("timezone", tz),
 		zap.String("start_time", startTime),
 		zap.String("end_time", endTime),
+		zap.Time("next_send_at", next),
 	)
 
 	return nil
