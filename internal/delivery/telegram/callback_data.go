@@ -14,8 +14,8 @@ const (
 	actionProgress   = "progress"
 	actionReminder   = "reminder"
 	actionOnboarding = "onboarding"
+	actionToday      = "today"
 	actionReset      = "reset"
-	actionNext       = "next"
 )
 
 // Settings sub-actions.
@@ -50,15 +50,13 @@ const (
 )
 
 const (
-	resetConfirm = "confirm"
-	resetCancel  = "cancel"
+	todayPage  = "page"
+	todayAudio = "audio"
 )
 
-// Next sub-actions.
 const (
-	nextQuiz     = "quiz"
-	nextToday    = "today"
-	nextSettings = "settings"
+	resetConfirm = "confirm"
+	resetCancel  = "cancel"
 )
 
 // callbackData represents structured callback data.
@@ -88,6 +86,20 @@ func decodeCallback(data string) callbackData {
 		Params: parts[1:],
 		Raw:    data,
 	}
+}
+
+func buildTodayPageCallback(page int) string {
+	return callbackData{
+		Action: actionToday,
+		Params: []string{todayPage, strconv.Itoa(page)},
+	}.encode()
+}
+
+func buildTodayAudioCallback(nameNumber int) string {
+	return callbackData{
+		Action: actionToday,
+		Params: []string{todayAudio, strconv.Itoa(nameNumber)},
+	}.encode()
 }
 
 // buildNameCallback builds callback data for opening a "name" page.
@@ -216,16 +228,3 @@ func buildResetConfirmCallback() string {
 func buildResetCancelCallback() string {
 	return callbackData{Action: actionReset, Params: []string{resetCancel}}.encode()
 }
-
-func buildNextCallback(subAction string, value ...string) string {
-	params := []string{subAction}
-	params = append(params, value...)
-	return callbackData{
-		Action: actionNext,
-		Params: params,
-	}.encode()
-}
-
-func buildNextQuizCallback() string     { return buildNextCallback(nextQuiz) }
-func buildNextTodayCallback() string    { return buildNextCallback(nextToday) }
-func buildNextSettingsCallback() string { return buildNextCallback(nextSettings) }

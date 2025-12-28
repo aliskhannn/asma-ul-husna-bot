@@ -142,8 +142,10 @@ func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 
 // buildRemindersKeyboard builds keyboard for reminder settings
 func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKeyboardMarkup {
+	enabled := reminder != nil && reminder.IsEnabled
+
 	toggleText := "🔕 Отключить"
-	if !reminder.IsEnabled {
+	if !enabled {
 		toggleText = "🔔 Включить"
 	}
 
@@ -153,7 +155,7 @@ func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKey
 		),
 	}
 
-	if reminder.IsEnabled {
+	if enabled {
 		rows = append(rows,
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("📅 Частота", buildSettingsCallback(settingsReminders, "frequency")),
@@ -236,28 +238,51 @@ func buildResetKeyboard() *tgbotapi.InlineKeyboardMarkup {
 	return &kb
 }
 
-func nextCardKeyboard() tgbotapi.InlineKeyboardMarkup {
+func welcomeReturningKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🧠 Квиз", buildNextQuizCallback()),
+			tgbotapi.NewInlineKeyboardButtonData("📅 Открыть /today", buildTodayPageCallback(0)),
+			tgbotapi.NewInlineKeyboardButtonData("🎯 Начать квиз", buildQuizStartCallback()),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📅 Сегодня", buildNextTodayCallback()),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", buildNextSettingsCallback()),
+			tgbotapi.NewInlineKeyboardButtonData("📊 Прогресс", buildProgressCallback()),
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", buildSettingsCallback(settingsMenu)),
 		),
 	)
 }
 
-func welcomeReturningKeyboard() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🧠 Квиз", buildNextQuizCallback()),
-			tgbotapi.NewInlineKeyboardButtonData("📊 Прогресс", buildProgressCallback()),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", buildNextSettingsCallback()),
-		),
-	)
+func todayCardsKeyboard(page, total, nameNumber int) *tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	if total > 1 {
+		var nav []tgbotapi.InlineKeyboardButton
+		if page > 0 {
+			nav = append(nav,
+				tgbotapi.NewInlineKeyboardButtonData("⬅️ Предыдущее", buildTodayPageCallback(page-1)),
+			)
+		}
+		if page+1 < total {
+			nav = append(nav,
+				tgbotapi.NewInlineKeyboardButtonData("Следующее ➡️", buildTodayPageCallback(page+1)),
+			)
+		}
+		if len(nav) > 0 {
+			rows = append(rows, nav)
+		}
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🎯 Начать квиз", buildQuizStartCallback()),
+	))
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔊 Прослушать", buildTodayAudioCallback(nameNumber)),
+	))
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("⚙️ Настройки", buildSettingsCallback(settingsMenu)),
+	))
+
+	kb := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	return &kb
 }

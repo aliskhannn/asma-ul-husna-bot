@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
-	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -58,7 +57,7 @@ func (h *Handler) handleNumber(numStr string) HandlerFunc {
 
 		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 			return h.nameService.GetByNumber(ctx, n)
-		}, chatID, "", "")
+		}, chatID)
 		if err != nil {
 			return err
 		}
@@ -74,317 +73,83 @@ func (h *Handler) handleNumber(numStr string) HandlerFunc {
 	}
 }
 
-// handleNext shows one name in phase new introduced today.
-func (h *Handler) handleNext(userID int64) HandlerFunc {
-	return func(ctx context.Context, chatID int64) error {
-		settings, err := h.settingsService.GetOrCreate(ctx, userID)
-		if err != nil || settings == nil {
-			settings = entities.NewUserSettings(userID)
-		}
-
-		namesPerDay := settings.NamesPerDay
-		if namesPerDay <= 0 {
-			namesPerDay = 1
-		}
-
-		stats, err := h.progressService.GetProgressSummary(ctx, userID)
-		if err != nil {
-			return h.send(newPlainMessage(chatID, msgInternalError))
-		}
-		learnedTotal := stats.Learned
-
-		isFirstTime := stats.DueToday == 0 && stats.Learned == 0 && stats.InProgress == 0 && stats.NotStarted == 99
-		if isFirstTime {
-			if err := h.send(newMessage(chatID, nextFirstTimeIntroMessage(namesPerDay))); err != nil {
-				return h.send(newPlainMessage(chatID, msgInternalError))
-			}
-		}
-
-		introducedToday, err := h.progressService.CountIntroducedToday(ctx, userID, settings.Timezone)
-		if err != nil {
-			return h.send(newPlainMessage(chatID, msgInternalError))
-		}
-
-		if introducedToday >= namesPerDay {
-			return h.sendNextLimitReached(chatID, introducedToday, namesPerDay)
-		}
-
-		suffix := nextHintMessage()
-
-		// 1) Guided debt first
-		if settings.LearningMode == string(entities.ModeGuided) {
-			hasDebt, err := h.dailyNameService.HasUnfinishedDays(ctx, userID)
-			if err != nil {
-				h.logger.Error("failed to check unfinished days", zap.Error(err))
-				return h.send(newPlainMessage(chatID, msgNameUnavailable))
-			}
-			if hasDebt {
-				n, err := h.dailyNameService.GetOldestUnfinishedName(ctx, userID)
-				if err != nil {
-					h.logger.Error("failed to get oldest unfinished name", zap.Error(err))
-					return h.send(newPlainMessage(chatID, msgNameUnavailable))
-				}
-
-				prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
-				return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", n, prefix, suffix)
-			}
-		}
-
-		// 2) today plan
-		todayNames, err := h.dailyNameService.GetTodayNames(ctx, userID)
-		if err != nil {
-			h.logger.Error("failed to get today names", zap.Error(err))
-			return h.send(newPlainMessage(chatID, msgNameUnavailable))
-		}
-
-		// Helper: introduce one + recount + send card (so prefix is correct)
-		introduceAndShow := func() error {
-			nameNumber, err := h.introduceOne(ctx, userID, chatID, "", "")
-			if err != nil {
-				h.logger.Error("failed to introduce name", zap.Error(err))
-				return err
-			}
-
-			introducedToday2, err := h.progressService.CountIntroducedToday(ctx, userID, settings.Timezone)
-			if err != nil {
-				return h.send(newPlainMessage(chatID, msgInternalError))
-			}
-
-			prefix := buildNextPrefix(introducedToday2, namesPerDay, learnedTotal)
-			return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", nameNumber, prefix, suffix)
-		}
-
-		// 3) empty => introduce (if quota allows)
-		if len(todayNames) == 0 {
-			return introduceAndShow()
-		}
-
-		dec, err := h.decideToday(ctx, userID, todayNames)
-		if err != nil {
-			h.logger.Error("failed to decide today state", zap.Error(err))
-			return h.send(newPlainMessage(chatID, msgNameUnavailable))
-		}
-
-		planFull := len(todayNames) >= namesPerDay
-
-		// If there is new to show => show (prefix based on introducedToday we already computed)
-		if dec.State == TodayHasNew || dec.HasNew {
-			prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
-			return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", dec.NewToShow, prefix, suffix)
-		}
-
-		// If plan not full => introduce one and show it with updated prefix
-		if !planFull {
-			return introduceAndShow()
-		}
-
-		// planFull && hasLearning => blocked
-		if planFull && dec.HasLearning {
-			return h.sendNextBlockedNeedQuiz(chatID, namesPerDay)
-		}
-
-		switch dec.State {
-		case TodayHasNew:
-			prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
-			return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", dec.NewToShow, prefix, suffix)
-
-		case TodayAllLearning:
-			return h.sendNextBlockedNeedQuiz(chatID, namesPerDay)
-
-		case TodayMixed:
-			if n, ok := h.chooseFirstNotMastered(ctx, userID, todayNames); ok {
-				prefix := buildNextPrefix(introducedToday, namesPerDay, learnedTotal)
-				return h.sendNameCardWithPrefix(ctx, chatID, 0, "next", n, prefix, suffix)
-			}
-			return h.send(newPlainMessage(chatID, msgNameUnavailable))
-
-		case TodayAllMastered:
-			if len(todayNames) < namesPerDay {
-				return introduceAndShow()
-			}
-			return h.send(newPlainMessage(chatID,
-				fmt.Sprintf("✅ Сегодняшний план выполнен (%d/%d).\n\n"+
-					"Чтобы открыть новые имена:\n"+
-					"• Увеличьте «имён в день» в /settings\n"+
-					"• Или дождитесь следующего дня",
-					len(todayNames), namesPerDay)))
-
-		default:
-			return h.send(newPlainMessage(chatID, msgNameUnavailable))
-		}
-	}
-}
-
-// introduceOne introduces one new name and adds it to today's plan.
-func (h *Handler) introduceOne(ctx context.Context, userID, chatID int64, prefix, suffix string) (int, error) {
-	newNums, err := h.progressService.GetNewNames(ctx, userID, 1)
-	if err != nil {
-		h.logger.Error("failed to get new names", zap.Error(err))
-		return 0, h.send(newPlainMessage(chatID, msgNameUnavailable))
-	}
-	if len(newNums) == 0 {
-		return 0, h.send(newPlainMessage(chatID,
-			"🎉 Вы уже начали изучение всех 99 имён!\n\nИспользуйте /quiz для повторения."))
-	}
-
-	newNum := newNums[0]
-
-	if err := h.progressService.IntroduceName(ctx, userID, newNum); err != nil {
-		h.logger.Error("failed to mark name as introduced", zap.Error(err))
-		return 0, h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении прогресса"))
-	}
-	if err := h.dailyNameService.AddTodayName(ctx, userID, newNum); err != nil {
-		h.logger.Error("failed to add today name", zap.Error(err))
-		return 0, h.send(newPlainMessage(chatID, "❌ Ошибка при сохранении дневного плана"))
-	}
-
-	return newNum, nil
-}
-
-type TodayState int
-
-const (
-	TodayEmpty TodayState = iota
-	TodayAllLearning
-	TodayHasNew
-	TodayAllMastered
-	TodayMixed
-)
-
-type TodayDecision struct {
-	State       TodayState
-	NewToShow   int // nameNumber if State == TodayHasNew
-	HasLearning bool
-	HasNew      bool
-	AllMastered bool
-}
-
-func (h *Handler) decideToday(ctx context.Context, userID int64, todayNames []int) (TodayDecision, error) {
-	if len(todayNames) == 0 {
-		return TodayDecision{State: TodayEmpty}, nil
-	}
-
-	m, err := h.progressService.GetByNumbers(ctx, userID, todayNames)
-	if err != nil {
-		return TodayDecision{}, err
-	}
-
-	dec := TodayDecision{
-		State:       TodayMixed,
-		NewToShow:   0,
-		HasLearning: false,
-		HasNew:      false,
-		AllMastered: true,
-	}
-
-	allLearning := true
-
-	for _, num := range todayNames {
-		p, ok := m[num]
-		phase := string(entities.PhaseNew)
-		if ok && p != nil {
-			phase = string(p.Phase)
-		}
-
-		if phase == string(entities.PhaseNew) && !dec.HasNew {
-			dec.HasNew = true
-			dec.NewToShow = num
-		}
-		if phase == string(entities.PhaseLearning) {
-			dec.HasLearning = true
-		}
-
-		if phase != string(entities.PhaseMastered) {
-			dec.AllMastered = false
-		}
-		if phase != string(entities.PhaseLearning) {
-			allLearning = false
-		}
-	}
-
-	switch {
-	case dec.HasNew:
-		dec.State = TodayHasNew
-	case dec.AllMastered:
-		dec.State = TodayAllMastered
-	case allLearning:
-		dec.State = TodayAllLearning
-	default:
-		dec.State = TodayMixed
-	}
-
-	return dec, nil
-}
-
-// handleToday shows all names introduced today.
 func (h *Handler) handleToday(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
+		return h.handleTodayPage(userID)(ctx, chatID, 0, 0)
+	}
+}
+
+func (h *Handler) handleTodayPage(userID int64) func(ctx context.Context, chatID int64, messageID int, page int) error {
+	return func(ctx context.Context, chatID int64, messageID int, page int) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
 		if err != nil || settings == nil {
 			settings = entities.NewUserSettings(userID)
 		}
-
 		namesPerDay := settings.NamesPerDay
 		if namesPerDay <= 0 {
 			namesPerDay = 1
 		}
 
-		todayNames, err := h.dailyNameService.GetTodayNames(ctx, userID)
+		// ensure today's plan exists (debt + new up to quota)
+		err = h.dailyNameService.EnsureTodayPlan(
+			ctx,
+			userID,
+			settings.Timezone,
+			namesPerDay,
+		)
 		if err != nil {
-			h.logger.Error("failed to get today names", zap.Error(err))
-			return h.send(newPlainMessage(chatID, "❌ Ошибка загрузки списка"))
+			return h.send(newPlainMessage(chatID, msgInternalError))
 		}
 
-		// Empty today plan
+		todayNames, err := h.dailyNameService.GetTodayNamesTZ(ctx, userID, settings.Timezone)
+		if err != nil {
+			return h.send(newPlainMessage(chatID, msgInternalError))
+		}
 		if len(todayNames) == 0 {
-			msg := newPlainMessage(chatID,
-				fmt.Sprintf("📚 Сегодня ещё не начали изучение.\n\n"+
-					"💡 Используйте /next чтобы начать! (лимит: %d в день)",
-					namesPerDay))
-			return h.send(msg)
+			return h.send(newPlainMessage(chatID, "📚 На сегодня пока нет имён.\n\nНажмите /new, чтобы открыть новое имя."))
 		}
 
-		// Build the list with learning status
-		return h.sendTodayList(ctx, chatID, userID, settings, todayNames)
-	}
-}
+		if page < 0 {
+			page = 0
+		}
+		if page >= len(todayNames) {
+			page = len(todayNames) - 1
+		}
 
-func (h *Handler) chooseFirstUnfinished(ctx context.Context, userID int64, nums []int) (int, bool) {
-	for _, n := range nums {
-		streak, err := h.progressService.GetStreak(ctx, userID, n)
+		nameNumber := todayNames[page]
+
+		// статус (✅ mastered, ⏳ иначе)
+		status := "⏳"
+		pMap, _ := h.progressService.GetByNumbers(ctx, userID, []int{nameNumber})
+		if p := pMap[nameNumber]; p != nil && p.Phase == entities.PhaseMastered {
+			status = "✅"
+		}
+
+		prefix := md(fmt.Sprintf("📅 Сегодня: %s %d/%d\n\n", status, page+1, len(todayNames)))
+
+		name, err := h.nameService.GetByNumber(ctx, nameNumber)
 		if err != nil {
-			return n, true
+			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 		}
-		if streak < 7 {
-			return n, true
+
+		text := prefix + buildNameCardText(name)
+
+		kb := todayCardsKeyboard(page, len(todayNames), name.Number)
+
+		if messageID != 0 {
+			edit := newEdit(chatID, messageID, text)
+			if kb != nil {
+				edit.ReplyMarkup = kb
+			}
+			return h.send(edit)
 		}
-	}
-	return 0, false
-}
 
-func (h *Handler) chooseFirstNotMastered(ctx context.Context, userID int64, todayNames []int) (int, bool) {
-	if len(todayNames) == 0 {
-		return 0, false
-	}
-
-	m, err := h.progressService.GetByNumbers(ctx, userID, todayNames)
-	if err != nil {
-		h.logger.Warn("failed to load progress for today names", zap.Error(err))
-		return 0, false
-	}
-
-	for _, num := range todayNames {
-		p, ok := m[num]
-		if !ok || p == nil {
-			// нет записи прогресса => считаем что это точно не mastered
-			return num, true
+		msg := newMessage(chatID, text)
+		if kb != nil {
+			msg.ReplyMarkup = *kb
 		}
-		if p.Phase != entities.PhaseMastered {
-			return num, true
-		}
+		return h.send(msg)
 	}
-
-	return 0, false
 }
 
 // handleRandom shows random name from today list (guided) OR any name (free).
@@ -416,7 +181,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 
 			msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 				return h.nameService.GetByNumber(ctx, name.Number)
-			}, chatID, "", "")
+			}, chatID)
 			if err != nil {
 				return err
 			}
@@ -436,7 +201,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 
 		msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 			return h.nameService.GetByNumber(ctx, nameNumber)
-		}, chatID, "", "")
+		}, chatID)
 		if err != nil {
 			return err
 		}
@@ -480,17 +245,10 @@ func (h *Handler) handleAll() HandlerFunc {
 	}
 }
 
-// handleRange sends a paginated list of names in a specified range.
-func (h *Handler) handleRange(argsStr string) HandlerFunc {
+// handleRangeNumbers sends a paginated list of names in a specified range.
+func (h *Handler) handleRangeNumbers(from, to int) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
-		args := strings.Fields(argsStr)
-		if len(args) != 2 {
-			return h.send(newPlainMessage(chatID, msgUseRange))
-		}
-
-		from, errFrom := strconv.Atoi(args[0])
-		to, errTo := strconv.Atoi(args[1])
-		if errFrom != nil || errTo != nil || from < 1 || to > 99 || from > to {
+		if from < 1 || to > 99 || from > to {
 			return h.send(newPlainMessage(chatID, msgInvalidRange))
 		}
 
@@ -498,7 +256,6 @@ func (h *Handler) handleRange(argsStr string) HandlerFunc {
 		if err != nil {
 			return err
 		}
-
 		if names == nil {
 			return h.send(newPlainMessage(chatID, msgNameUnavailable))
 		}

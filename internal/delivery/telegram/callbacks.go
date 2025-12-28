@@ -22,6 +22,8 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 	switch data.Action {
 	case actionName:
 		h.withCallbackErrorHandling(h.handleNameCallback)(ctx, cb)
+	case actionToday:
+		h.withCallbackErrorHandling(h.handleTodayCallback)(ctx, cb)
 	case actionRange:
 		h.withCallbackErrorHandling(h.handleRangeCallback)(ctx, cb)
 	case actionSettings:
@@ -36,8 +38,6 @@ func (h *Handler) handleCallback(ctx context.Context, cb *tgbotapi.CallbackQuery
 		h.withCallbackErrorHandling(h.handleOnboardingCallback)(ctx, cb)
 	case actionReset:
 		h.withCallbackErrorHandling(h.handleResetCallback)(ctx, cb)
-	case actionNext:
-		h.withCallbackErrorHandling(h.handleNextCallback)(ctx, cb)
 	default:
 		h.logger.Warn("unknown callback action",
 			zap.String("action", data.Action),
@@ -106,6 +106,55 @@ func (h *Handler) handleNameCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 
 	return h.send(edit)
 }
+func (h *Handler) handleTodayCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
+	if cb.Message == nil {
+		return nil
+	}
+
+	data := decodeCallback(cb.Data)
+
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+	messageID := cb.Message.MessageID
+
+	if len(data.Params) < 1 {
+		return nil
+	}
+
+	switch data.Params[0] {
+	case todayPage:
+		page := 0
+		if len(data.Params) >= 2 {
+			if p, err := strconv.Atoi(data.Params[1]); err == nil {
+				page = p
+			}
+		}
+		return h.handleTodayPage(userID)(ctx, chatID, messageID, page)
+
+	case todayAudio:
+		if len(data.Params) < 2 {
+			return nil
+		}
+
+		nameNumber, err := strconv.Atoi(data.Params[1])
+		if err != nil {
+			return nil
+		}
+
+		name, err := h.nameService.GetByNumber(ctx, nameNumber)
+		if err != nil || name == nil || name.Audio == "" {
+			return h.answerCallback(cb.ID, "Аудио недоступно")
+		}
+
+		audio := buildNameAudio(name, chatID)
+		_ = h.send(*audio)
+
+		return h.answerCallback(cb.ID, "🔊")
+
+	default:
+		return nil
+	}
+}
 
 // handleRangeCallback handles pagination for range-based name view.
 func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
@@ -164,39 +213,6 @@ func (h *Handler) handleRangeCallback(ctx context.Context, cb *tgbotapi.Callback
 	}
 
 	return h.send(edit)
-}
-
-func (h *Handler) handleNextCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
-	if cb.Message == nil {
-		return nil
-	}
-
-	h.removeInlineKeyboard(cb.Message.Chat.ID, cb.Message.MessageID)
-
-	data := decodeCallback(cb.Data)
-
-	if len(data.Params) == 0 {
-		return nil
-	}
-	sub := data.Params[0]
-
-	userID := cb.From.ID
-	chatID := cb.Message.Chat.ID
-
-	switch sub {
-	case nextQuiz:
-		return h.handleQuiz(userID)(ctx, chatID)
-
-	case nextToday:
-		return h.handleToday(userID)(ctx, chatID)
-
-	case nextSettings:
-		return h.handleSettings(userID)(ctx, chatID)
-
-	default:
-		h.logger.Warn("unknown next sub-action", zap.String("sub", sub), zap.String("raw", data.Raw))
-		return nil
-	}
 }
 
 // handleSettingsCallback handles all settings-related callbacks.
@@ -779,8 +795,8 @@ func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.Cal
 		_ = h.send(tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID))
 
 		switch cmd {
-		case "next":
-			return h.handleNext(userID)(ctx, chatID)
+		case "today":
+			return h.handleToday(userID)(ctx, chatID)
 		case "all":
 			return h.handleAll()(ctx, chatID)
 		default:
