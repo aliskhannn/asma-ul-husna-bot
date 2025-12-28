@@ -104,6 +104,10 @@ type DailyNameRepository interface {
 	AddTodayName(ctx context.Context, userID int64, nameNumber int) error
 	RemoveTodayName(ctx context.Context, userID int64, nameNumber int) error
 	GetOldestUnfinishedName(ctx context.Context, userID int64) (int, error)
+	GetNamesByDate(ctx context.Context, userID int64, dateUTC time.Time) ([]int, error)
+	GetNamesCountByDate(ctx context.Context, userID int64, dateUTC time.Time) (int, error)
+	AddNameForDate(ctx context.Context, userID int64, dateUTC time.Time, nameNumber int) error
+	GetCarryOverLearningFromPast(ctx context.Context, userID int64, todayDateUTC time.Time, limit int) ([]int, error)
 }
 
 type ResetRepository interface {

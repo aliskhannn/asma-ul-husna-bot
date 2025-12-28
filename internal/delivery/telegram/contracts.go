@@ -65,6 +65,9 @@ type DailyNameService interface {
 	AddTodayName(ctx context.Context, userID int64, nameNumber int) error
 	GetOldestUnfinishedName(ctx context.Context, userID int64) (int, error)
 	HasUnfinishedDays(ctx context.Context, userID int64) (bool, error)
+	EnsureTodayPlan(ctx context.Context, userID int64, tz string, namesPerDay int) error
+	GetTodayNamesTZ(ctx context.Context, userID int64, tz string) ([]int, error)
+	AddTodayNameTZ(ctx context.Context, userID int64, tz string, nameNumber int) error
 }
 
 // QuizStorage interface for quiz session storage.

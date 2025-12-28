@@ -1,51 +1,48 @@
 # Asma ul‑Husna Bot
 
-A Telegram bot that helps you learn the 99 Beautiful Names of Allah (Asma ul‑Husna) through name cards, quizzes, progress tracking, and reminders.
+A Telegram bot that helps you learn the 99 Beautiful Names of Allah (Asma ul‑Husna) using daily name cards, quizzes, progress tracking, and reminders.
 
 ## Features
 
 - 📖 Name cards with translation, transliteration, and audio pronunciation
-- 🎯 Quizzes to reinforce learning and check retention
-- 📊 Progress tracking (learned / in progress) + streaks
-- 🔔 Flexible reminders (time window + interval)
+- 📅 **Daily plan** (`/today`) generated automatically from your “names per day” setting (includes due/review items when applicable)
+- 🧠 Quizzes to reinforce learning and check retention
+- 📊 Progress tracking and statistics (`/progress`)
+- 🔔 Flexible reminders with interval + time window (`/settings`)
 - ⚙️ Learning modes:
-    - **Guided**: daily plan with a configurable “names per day” limit
-    - **Free**: explore and learn without being blocked by the daily quota
-- 🧠 Spaced repetition mechanics to improve long‑term memorization
+    - **Guided**: focus on today’s planned names; `/random` picks from today’s list
+    - **Free**: explore without being limited by the daily plan; `/random` picks from all 99
 
-## How to use
+## How it works
 
-Recommended learning loop:
-- `/next → /today → /quiz`
+The bot keeps a daily learning plan based on your settings (especially “names per day”) and shows it in `/today`.[46]
+Use quizzes to consolidate learning, and reminders to stay consistent.
 
-Where:
-- `/next` shows the next name to learn and can introduce a new one
-- `/today` lists today’s names (in Guided mode)
-- `/quiz` helps you consolidate and move forward
+Recommended loop:
+- `/today → (optional: 🔊 Listen) → /quiz → /progress`
 
 ## Commands
 
 ### Learning
-- `/next` — show the next name / introduce a new one
-- `/today` — list today’s names
-- `/quiz` — start a quiz for the current learning set
-- `/random` — random name (Guided: from today’s list, Free: from all 99)
+- `/today` — open today’s list (with pagination + audio button)
+- `/quiz` — start a quiz for your current learning set (may resume an active session)
+- `/random` — random name (Guided: from today; Free: from all 99)
 
 ### Browse
-- `1-99` — open a specific name by number (browse mode)
-- `/all` — list all 99 names
-- `/range N M` — list names from N to M (e.g. `/range 1 10`)
+- `1-99` — open a specific name by number (send “10” to open name #10)
+- `N M` — open a range by sending two numbers (example: `5 10`)
+- `/all` — list all 99 names (paginated)
 
 ### Progress & settings
 - `/progress` — show learning statistics
-- `/settings` — learning mode, quiz options, reminders, names per day
-- `/help` — show help and commands list
-- `/reset` — reset progress (if enabled)
+- `/settings` — names per day, learning mode, quiz mode, reminders
+- `/help` — help and commands list
+- `/reset` — reset progress and settings (with confirmation)
 
 ## Notes
 
-- `/random` and `1-99` are intended for exploration and may not affect progress.
-- Some behavior depends on the current learning mode (Guided / Free).
+- `/random`, `1-99`, and `N M` are primarily for exploration; learning behavior can depend on the current mode (Guided/Free).
+- Reminders can be enabled/disabled and configured in `/settings` (interval and time window).
 
 ## License
 

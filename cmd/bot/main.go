@@ -49,12 +49,8 @@ func main() {
 			Description: "Начать работу с ботом",
 		},
 		{
-			Command:     "next",
-			Description: "Начать изучение следующего имени",
-		},
-		{
 			Command:     "today",
-			Description: "Список имен на сегодня",
+			Description: "Имена на сегодня (план формируется автоматически по «имён в день»)",
 		},
 		{
 			Command:     "random",
@@ -62,15 +58,11 @@ func main() {
 		},
 		{
 			Command:     "quiz",
-			Description: "Пройти квиз по изученным именам",
+			Description: "Пройти квиз по изучаемым именам",
 		},
 		{
 			Command:     "all",
 			Description: "Показать все 99 имён",
-		},
-		{
-			Command:     "range",
-			Description: "Показать имена в диапазоне (например, /range 1 10)",
 		},
 		{
 			Command:     "progress",
@@ -78,7 +70,7 @@ func main() {
 		},
 		{
 			Command:     "settings",
-			Description: "Настройки бота",
+			Description: "Настройки (режим, квиз, напоминания, имён в день)",
 		},
 		{
 			Command:     "help",
@@ -149,7 +141,7 @@ func main() {
 	progressService := service.NewProgressService(progressRepo, settingsRepo)
 
 	dailyNameRepo := repository.NewDailyNameRepository(pool)
-	dailyNameService := service.NewDailyNameService(dailyNameRepo)
+	dailyNameService := service.NewDailyNameService(dailyNameRepo, progressRepo)
 
 	quizRepo := repository.NewQuizRepository(pool)
 	quizService := service.NewQuizService(tr, nameRepo, progressRepo, quizRepo, settingsRepo, dailyNameRepo, lg)

@@ -105,18 +105,17 @@ func onboardingStep3Message() string {
 	sb.WriteString("🎯 ")
 	sb.WriteString(bold("Управляемый"))
 	sb.WriteString(md(" (рекомендуется)\n"))
-	sb.WriteString(md("• Новое имя считается «новым», пока вы не начнёте его учить\n"))
-	sb.WriteString(md("• /next будет показывать это имя снова, пока вы не закрепите его в /quiz\n"))
-	sb.WriteString(md("• Чтобы открыть следующее имя, нужно 2 правильных ответа в /quiz\n"))
-	sb.WriteString(md("• После этого /next откроет уже следующее новое имя\n"))
+	sb.WriteString(md("• Имена добавляются автоматически по настройке «имён в день»\n"))
+	sb.WriteString(md("• Основной экран — /today: листайте имена на сегодня и слушайте аудио\n"))
+	sb.WriteString(md("• Квиз помогает закреплять изученное и повторять по расписанию (SRS)\n"))
 	sb.WriteString("\n")
 
 	// Free
 	sb.WriteString("🆓 ")
 	sb.WriteString(bold("Свободный\n"))
 	sb.WriteString(md("• Изучайте в своём темпе\n"))
-	sb.WriteString(md("• /next не блокирует новые имена (в рамках лимита «имён в день»)\n"))
-	sb.WriteString(md("• Для тех, кто хочет гибкости"))
+	sb.WriteString(md("• Можно чаще пользоваться /random и просмотром 1–99 (это не влияет на прогресс)\n"))
+	sb.WriteString(md("• Для тех, кто хочет больше гибкости"))
 
 	return sb.String()
 }
@@ -161,15 +160,19 @@ func onboardingCompleteMessage() string {
 	sb.WriteString(md("✅ "))
 	sb.WriteString(bold("Всё готово!"))
 	sb.WriteString("\n\n")
-	sb.WriteString(md("Давайте попробуем изучить первое имя:"))
+
+	sb.WriteString(md("Ваш ежедневный план формируется автоматически по настройке «имён в день»."))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(bold("1️⃣ /next"))
-	sb.WriteString(md(" — покажет ваше первое имя\n"))
+	sb.WriteString(md("Начните прямо сейчас:"))
+	sb.WriteString("\n\n")
+
+	sb.WriteString(bold("1️⃣ /today"))
+	sb.WriteString(md(" — ваши имена на сегодня\n"))
 	sb.WriteString(bold("2️⃣ /quiz"))
 	sb.WriteString(md(" — проверит, как вы запомнили\n"))
-	sb.WriteString(bold("3️⃣ /today"))
-	sb.WriteString(md(" — все имена на сегодня\n"))
+	sb.WriteString(bold("3️⃣ /progress"))
+	sb.WriteString(md(" — покажет статистику\n"))
 	sb.WriteString("\n")
 
 	sb.WriteString(md("📖 "))
@@ -178,15 +181,14 @@ func onboardingCompleteMessage() string {
 	sb.WriteString(md("Используйте /all — это не повлияет на обучение!"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(md("💡 Совет: начните с /next прямо сейчас!"))
-
+	sb.WriteString(md("💡 Совет: откройте /today и пройдитесь по именам дня."))
 	return sb.String()
 }
 
 func onboardingCompleteKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📖 Начать с /next", buildOnboardingCmdCallback("next")),
+			tgbotapi.NewInlineKeyboardButtonData("📅 Открыть /today", buildOnboardingCmdCallback("today")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👀 Посмотреть все имена", buildOnboardingCmdCallback("all")),

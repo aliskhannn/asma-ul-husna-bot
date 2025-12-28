@@ -14,30 +14,38 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
-// Error messages.
+// Input / validation.
 const (
 	msgIncorrectNameNumber  = "Некорректный ввод. Введите число от 1 до 99."
 	msgOutOfRangeNumber     = "Номер имени должен быть от 1 до 99."
-	msgUseRange             = "Используйте: /range 25 30."
-	msgInvalidRange         = "Некорректный диапазон. Пример: /range 25 30."
+	msgInvalidRange         = "Некорректный диапазон. Пример: 25 30."
 	msgInvalidIntervalHours = "Неверный интервал часов. Выберите 1, 2, 3 или 4."
-	msgNameUnavailable      = "Не удалось получить имя. Попробуйте позже."
-	msgProgressUnavailable  = "Не удалось получить прогресс. Попробуйте позже."
-	msgSettingsUnavailable  = "Не удалось получить настройки. Попробуйте позже."
-	msgQuizUnavailable      = "Не удалось создать квиз, попробуйте позже."
-	msgInternalError        = "Что‑то пошло не так. Попробуйте позже."
-	msgUnknownCommand       = "Неизвестная команда. Список доступных команд:\n\n" +
+)
+
+// Data / service errors.
+const (
+	msgNameUnavailable     = "Не удалось получить имя. Попробуйте позже."
+	msgProgressUnavailable = "Не удалось получить прогресс. Попробуйте позже."
+	msgSettingsUnavailable = "Не удалось получить настройки. Попробуйте позже."
+	msgQuizUnavailable     = "Не удалось создать квиз, попробуйте позже."
+	msgInternalError       = "Что‑то пошло не так. Попробуйте позже."
+)
+
+// Command/help text.
+const (
+	msgUnknownCommand = "Неизвестная команда. Список доступных команд:\n\n" +
 		"/start — начать работу с ботом\n" +
-		"/next — показать следующее имя / ввести новое\n" +
-		"/today — список всех имён на сегодня\n" +
+		"/today — имена на сегодня\n" +
 		"/random — случайное имя (guided: из сегодняшних, free: из всех 99)\n" +
 		"/quiz — пройти квиз по изучаемым именам\n" +
 		"/all — посмотреть все 99 имён\n" +
-		"/range N M — имена с N по M (использование, /range 1 10)\n" +
 		"/progress — показать статистику прогресса\n" +
 		"/settings — настройки (режим обучения, квиз, напоминания, имён в день)\n" +
 		"/help — помощь и список команд\n" +
-		"/reset — сбросить прогресс и настройки"
+		"/reset — сбросить прогресс и настройки\n\n" +
+		"💡 Также можно:\n" +
+		"• Отправить число 1–99, чтобы открыть конкретное имя.\n" +
+		"• Отправить диапазон «N M» (например, 5 10), чтобы открыть имена с N по M."
 )
 
 const (
@@ -79,14 +87,15 @@ func msgNoAvailableQuestions() string {
 
 	sb.WriteString(md("Пока нет доступных вопросов для квиза."))
 	sb.WriteString("\n\n")
-	sb.WriteString(md("💡 В управляемом режиме (Guided) квизы показывают только имена, которые уже были введены через напоминания или команду /next."))
+
+	sb.WriteString(md("💡 В управляемом режиме (Guided) квиз использует имена из вашего ежедневного плана. План формируется автоматически по настройке «имён в день»."))
 	sb.WriteString("\n\n")
-	sb.WriteString(md("Вы можете:"))
+
+	sb.WriteString(md("Что можно сделать:"))
 	sb.WriteString("\n")
-	sb.WriteString(md("• Дождаться следующего напоминания\n"))
-	sb.WriteString(md("• Использовать /next, чтобы ввести имя сейчас\n"))
-	sb.WriteString(md("• Переключиться на свободный режим (Free) в /settings\n"))
-	sb.WriteString(md("• Увеличить количество имен в день"))
+	sb.WriteString(md("• Откройте /today и изучайте имена на сегодня\n"))
+	sb.WriteString(md("• Переключитесь на свободный режим (Free) в /settings\n"))
+	sb.WriteString(md("• Увеличьте «имён в день» в /settings"))
 
 	return sb.String()
 }
@@ -152,29 +161,23 @@ func helpMessage() string {
 	sb.WriteString(bold("Как пользоваться ботом"))
 	sb.WriteString("\n\n")
 
-	// Quick start
 	sb.WriteString("⚡ ")
 	sb.WriteString(bold("Быстрый старт:"))
 	sb.WriteString("\n")
-	sb.WriteString(bold("/next → /quiz → /today"))
-	sb.WriteString(md(" — идеальный цикл!"))
+	sb.WriteString(bold("/today → /quiz → /progress"))
+	sb.WriteString(md(" — базовый ежедневный цикл."))
 	sb.WriteString("\n\n")
 
-	// Learning section
 	sb.WriteString("📚 ")
 	sb.WriteString(bold("Изучение:"))
 	sb.WriteString("\n")
-	sb.WriteString("/next — ")
-	sb.WriteString(md("ввести новое имя (ограничено квотой в день)"))
+	sb.WriteString("/today — ")
+	sb.WriteString(md("имена на сегодня (план формируется автоматически по «имён в день»)"))
 	sb.WriteString("\n")
 	sb.WriteString("/quiz — ")
 	sb.WriteString(md("проверить знания"))
-	sb.WriteString("\n")
-	sb.WriteString("/today — ")
-	sb.WriteString(md("все имена на сегодня"))
 	sb.WriteString("\n\n")
 
-	// Browse section
 	sb.WriteString("👀 ")
 	sb.WriteString(bold("Просто посмотреть (без влияния на прогресс):"))
 	sb.WriteString("\n")
@@ -188,15 +191,14 @@ func helpMessage() string {
 	sb.WriteString(md("конкретное имя по номеру"))
 	sb.WriteString("\n\n")
 
-	// Progress and settings
 	sb.WriteString("⚙️ ")
-	sb.WriteString(bold("Настройки:"))
+	sb.WriteString(bold("Прогресс и настройки:"))
 	sb.WriteString("\n")
 	sb.WriteString("/progress — ")
 	sb.WriteString(md("статистика"))
 	sb.WriteString("\n")
 	sb.WriteString("/settings — ")
-	sb.WriteString(md("режим, квоты, напоминания"))
+	sb.WriteString(md("режим, квиз, напоминания, имён в день"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(md("❓ Остались вопросы? Напишите @your_support"))
@@ -212,15 +214,10 @@ func learningModeDescription() string {
 	sb.WriteString(" ")
 	sb.WriteString(md("(Guided)"))
 	sb.WriteString(":\n")
-	sb.WriteString(md("• /next вводит новые имена"))
-	sb.WriteString(bold(" по квоте "))
-	sb.WriteString(md("«имён в день»\n"))
-	sb.WriteString(md("• Квиз показывает"))
-	sb.WriteString(bold(" только введённые сегодня "))
-	sb.WriteString(md("имена\n"))
-	sb.WriteString(md("• После начала изучения (2+ правильных ответа) → разблокировка следующего\n"))
-	sb.WriteString(md("• Строгое следование SRS (интервальное повторение)\n"))
-	sb.WriteString(md("• Рекомендуется для глубокого постепенного изучения"))
+	sb.WriteString(md("• Имена добавляются автоматически по настройке «имён в день»\n"))
+	sb.WriteString(md("• /today — основной экран: листайте имена на сегодня и слушайте аудио\n"))
+	sb.WriteString(md("• Квиз помогает закреплять изученное и повторять по расписанию (SRS)\n"))
+	sb.WriteString(md("• Рекомендуется для постепенного системного изучения"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString("🆓 ")
@@ -228,38 +225,15 @@ func learningModeDescription() string {
 	sb.WriteString(" ")
 	sb.WriteString(md("(Free)"))
 	sb.WriteString(":\n")
-	sb.WriteString(md("• Квиз может вводить новые имена"))
-	sb.WriteString(bold(" без ограничений\n"))
-	sb.WriteString(md("• /next и напоминания работают как обычно\n"))
-	sb.WriteString(md("• Гибкий темп, можно учить много за раз\n\n"))
+	sb.WriteString(md("• Можно учить в более свободном темпе\n"))
+	sb.WriteString(md("• /random и просмотр 1–99 не влияют на прогресс\n"))
+	sb.WriteString(md("• Напоминания и настройки работают как обычно\n\n"))
 
 	sb.WriteString("💡 ")
 	sb.WriteString(bold("Команды просмотра\n"))
-	sb.WriteString(md(" (/random, 1-99) "))
+	sb.WriteString(md(" (/random, 1-99, /all) "))
 	sb.WriteString(bold("не влияют "))
 	sb.WriteString(md("на прогресс в обоих режимах"))
-
-	return sb.String()
-}
-
-func nextFirstTimeIntroMessage(namesPerDay int) string {
-	var sb strings.Builder
-	sb.WriteString(md("📚 "))
-	sb.WriteString(bold("Команда /next вводит новые имена для изучения"))
-	sb.WriteString("\n\n")
-	sb.WriteString(md("Вы можете вводить "))
-	sb.WriteString(bold(fmt.Sprintf("%d %s в день", namesPerDay, formatNamesCount(namesPerDay))))
-	sb.WriteString("\n\n")
-	sb.WriteString(md("💡 Чтобы просто посмотреть все 99 имён без изучения, используйте /all"))
-	return sb.String()
-}
-
-func nextHintMessage() string {
-	var sb strings.Builder
-
-	sb.WriteString(md("💡 Чтобы открыть новое имя: нажмите"))
-	sb.WriteString(bold("«🧠 Квиз»"))
-	sb.WriteString(md(" — и ответьте правильно 2 раза."))
 
 	return sb.String()
 }
@@ -276,15 +250,8 @@ func formatLearningMode(mode entities.LearningMode) string {
 }
 
 // formatNameMessage formats a single name message (MarkdownV2 safe).
-func formatNameMessage(prefix, suffix string, name *entities.Name) string {
+func formatNameMessage(name *entities.Name) string {
 	var sb strings.Builder
-
-	if prefix != "" {
-		sb.WriteString(prefix)
-		if !strings.HasSuffix(prefix, "\n\n") {
-			sb.WriteString("\n\n")
-		}
-	}
 
 	sb.WriteString(fmt.Sprintf(
 		"%s%s%s %s\n\n%s %s\n%s %s\n\n%s %s",
@@ -300,11 +267,6 @@ func formatNameMessage(prefix, suffix string, name *entities.Name) string {
 		bold(name.Meaning),
 	))
 
-	if suffix != "" {
-		sb.WriteString("\n\n")
-		sb.WriteString(suffix)
-	}
-
 	return sb.String()
 }
 
@@ -313,7 +275,6 @@ func buildNameResponse(
 	ctx context.Context,
 	get func(ctx2 context.Context) (*entities.Name, error),
 	chatID int64,
-	prefix, suffix string,
 ) (tgbotapi.MessageConfig, *tgbotapi.AudioConfig, error) {
 	name, err := get(ctx)
 	if err != nil {
@@ -331,7 +292,7 @@ func buildNameResponse(
 		return msg, nil, err
 	}
 
-	msg := newMessage(chatID, formatNameMessage(prefix, suffix, name))
+	msg := newMessage(chatID, formatNameMessage(name))
 
 	if name.Audio == "" {
 		return msg, nil, nil
@@ -362,10 +323,14 @@ func buildNamesPage(names []*entities.Name, page int) (text string, totalPages i
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
-		b.WriteString(formatNameMessage("", "", name))
+		b.WriteString(formatNameMessage(name))
 	}
 
 	return b.String(), totalPages
+}
+
+func buildNameCardText(name *entities.Name) string {
+	return formatNameMessage(name)
 }
 
 // buildRangePages builds pages for a range of names.
@@ -395,7 +360,7 @@ func buildRangePages(names []*entities.Name, from, to int) (pages []string) {
 			if i > 0 {
 				b.WriteString("\n\n")
 			}
-			b.WriteString(formatNameMessage("", "", name))
+			b.WriteString(formatNameMessage(name))
 		}
 
 		pages = append(pages, b.String())
@@ -461,13 +426,6 @@ func buildQuizStartMessage(mode string) string {
 		bold(modeText),
 		md("Выберите правильный вариант ответа для каждого вопроса."),
 	)
-}
-
-func buildNextPrefix(introducedToday, namesPerDay, learnedTotal int) string {
-	return md(fmt.Sprintf(
-		"📊 Новых сегодня: %d/%d | Всего выучено: %d/99",
-		introducedToday, namesPerDay, learnedTotal,
-	))
 }
 
 // formatQuizMode formats quiz mode for display.
@@ -675,7 +633,7 @@ func buildReminderNotification(payload entities.ReminderPayload) string {
 
 	sb.WriteString("\n\n")
 
-	sb.WriteString(formatNameMessage("", "", &payload.Name))
+	sb.WriteString(formatNameMessage(&payload.Name))
 	sb.WriteString("\n\n")
 
 	sb.WriteString("━━━━━━━━━━━━━━━━\n")

@@ -5,6 +5,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -101,15 +102,11 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	from := update.Message.From
 
 	chatID := update.Message.Chat.ID
-	cmdArgs := update.Message.CommandArguments()
 
 	if update.Message.IsCommand() {
 		switch update.Message.Command() {
 		case "start":
 			_ = h.withErrorHandling(h.handleStart(from.ID))(ctx, chatID)
-
-		case "next":
-			_ = h.withErrorHandling(h.handleNext(from.ID))(ctx, chatID)
 
 		case "today":
 			_ = h.withErrorHandling(h.handleToday(from.ID))(ctx, chatID)
@@ -119,9 +116,6 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 		case "all":
 			_ = h.withErrorHandling(h.handleAll())(ctx, chatID)
-
-		case "range":
-			_ = h.withErrorHandling(h.handleRange(cmdArgs))(ctx, chatID)
 
 		case "progress":
 			_ = h.withErrorHandling(h.handleProgress(from.ID))(ctx, chatID)
@@ -153,6 +147,18 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		}
 
 		return
+	}
+
+	text := strings.TrimSpace(update.Message.Text)
+
+	fields := strings.Fields(text)
+	if len(fields) == 2 {
+		from, err1 := strconv.Atoi(fields[0])
+		to, err2 := strconv.Atoi(fields[1])
+		if err1 == nil && err2 == nil {
+			_ = h.withErrorHandling(h.handleRangeNumbers(from, to))(ctx, chatID)
+			return
+		}
 	}
 
 	_ = h.withErrorHandling(h.handleNumber(update.Message.Text))(ctx, chatID)
@@ -218,23 +224,17 @@ func (h *Handler) sendQuizQuestionFromDB(
 	return nil
 }
 
-func (h *Handler) sendNameCard(ctx context.Context, chatID int64, messageID int, nameNumber int) error {
-	return h.sendNameCardWithPrefix(ctx, chatID, messageID, "", nameNumber, "", "")
-}
-
-func (h *Handler) sendNameCardWithPrefix(ctx context.Context, chatID int64, messageID int, cmd string, nameNumber int, prefix, suffix string) error {
+func (h *Handler) sendNameCard(ctx context.Context, chatID int64, nameNumber int, audioEnabled bool) error {
 	msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 		return h.nameService.GetByNumber(ctx, nameNumber)
-	}, chatID, prefix, suffix)
+	}, chatID)
 	if err != nil {
 		return err
 	}
 
-	if cmd == "next" {
-		msg.ReplyMarkup = nextCardKeyboard()
+	if !audioEnabled {
+		audio = nil
 	}
-
-	_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, messageID))
 
 	if audio != nil {
 		_ = h.send(*audio)
@@ -243,50 +243,6 @@ func (h *Handler) sendNameCardWithPrefix(ctx context.Context, chatID int64, mess
 		return err
 	}
 	return nil
-}
-
-func (h *Handler) sendNextLimitReached(chatID int64, introducedToday, namesPerDay int) error {
-	var sb strings.Builder
-
-	sb.WriteString(md("✅ Вы достигли дневного лимита ("))
-	sb.WriteString(bold(fmt.Sprintf("%d/%d", introducedToday, namesPerDay)))
-	sb.WriteString(md(")\n\n"))
-
-	sb.WriteString(md("Что можно сделать дальше:\n"))
-	sb.WriteString(md("• Нажмите "))
-	sb.WriteString(bold("«🧠 Квиз»"))
-	sb.WriteString(md(" — закрепить сегодняшние имена\n"))
-
-	sb.WriteString(md("• Нажмите "))
-	sb.WriteString(bold("«📅 Сегодня»"))
-	sb.WriteString(md(" — посмотреть план\n"))
-
-	sb.WriteString(md("• Нажмите "))
-	sb.WriteString(bold("«⚙️ Настройки»"))
-	sb.WriteString(md(" — увеличить лимит «Имён в день»\n\n"))
-
-	sb.WriteString(md("Вернитесь завтра за новыми именами!"))
-
-	msg := newMessage(chatID, sb.String())
-	kb := nextCardKeyboard()
-	msg.ReplyMarkup = kb
-
-	return h.send(msg)
-}
-
-func (h *Handler) sendNextBlockedNeedQuiz(chatID int64, namesPerDay int) error {
-	text := fmt.Sprintf(
-		"📚 Сегодня вы уже изучаете %d %s.\n\n"+
-			"Нажмите кнопку «🧠 Квиз»: нужно 2 правильных ответа, чтобы открыть следующее имя.\n\n"+
-			"💡 Или откройте «⚙️ Настройки» и увеличьте лимит «Имён в день».",
-		namesPerDay, formatNamesCount(namesPerDay),
-	)
-
-	msg := newMessage(chatID, md(text))
-	kb := nextCardKeyboard()
-	msg.ReplyMarkup = kb
-
-	return h.send(msg)
 }
 
 // sendTodayList sends a formatted list of today's names with their learning status.
