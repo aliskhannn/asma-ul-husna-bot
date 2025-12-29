@@ -75,6 +75,7 @@ type SettingsRepository interface {
 	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
 	UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error
 	UpsertDefaults(ctx context.Context, userID int64) error
+	UpdateTimezone(ctx context.Context, userID int64, timezone string) error
 }
 
 // ReminderRepository manages reminder persistence.

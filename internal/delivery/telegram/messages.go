@@ -523,7 +523,7 @@ func formatProgressMessage(summary *service.ProgressSummary, progressBar string)
 }
 
 // buildReminderSettingsMessage builds reminder settings screen message
-func buildReminderSettingsMessage(reminder *entities.UserReminders) string {
+func buildReminderSettingsMessage(timezone string, reminder *entities.UserReminders) string {
 	if reminder == nil {
 		return md("⏰ Настройки напоминаний") + "\n\n" +
 			md("Статус: ") + bold("🔕 Отключены") + "\n\n" +
@@ -542,7 +542,9 @@ func buildReminderSettingsMessage(reminder *entities.UserReminders) string {
 		endTime := reminder.EndTime[:5]     // "20:00"
 
 		details = fmt.Sprintf(
-			"\n%s %s\n%s %s — %s",
+			"\n%s %s\n%s %s\n%s %s — %s",
+			md("🌍 Часовой пояс:"),
+			bold(timezone),
 			md("📅 Частота:"),
 			bold(freqText),
 			md("⏰ Время:"),
@@ -559,6 +561,23 @@ func buildReminderSettingsMessage(reminder *entities.UserReminders) string {
 		details,
 		md("Напоминания помогут не забывать о ежедневной практике изучения имён Аллаха."),
 	)
+}
+
+func buildTimezoneMenuMessage(current string) string {
+	if current == "" {
+		current = "UTC"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(md("🌍 "))
+	sb.WriteString(bold("Часовой пояс"))
+	sb.WriteString("\n\n")
+	sb.WriteString(md("Текущий: "))
+	sb.WriteString(bold(current))
+	sb.WriteString("\n\n")
+	sb.WriteString(md("Выберите смещение от UTC, чтобы напоминания приходили по местному времени."))
+
+	return sb.String()
 }
 
 // formatIntervalHoursInt formats interval hours for display.
@@ -635,8 +654,6 @@ func buildReminderNotification(payload entities.ReminderPayload) string {
 
 	sb.WriteString(formatNameMessage(&payload.Name))
 	sb.WriteString("\n\n")
-
-	sb.WriteString("━━━━━━━━━━━━━━━━\n")
 
 	sb.WriteString(md("📊 "))
 	sb.WriteString(bold("Ваш прогресс:"))

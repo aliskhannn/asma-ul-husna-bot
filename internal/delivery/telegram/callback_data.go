@@ -47,6 +47,7 @@ const (
 	onboardingMode      = "mode"
 	onboardingReminders = "reminders"
 	onboardingCmd       = "cmd"
+	onboardingTimezone  = "timezone"
 )
 
 const (
@@ -218,6 +219,14 @@ func buildOnboardingCmdCallback(cmd string) string {
 	return callbackData{
 		Action: actionOnboarding,
 		Params: []string{onboardingCmd, cmd}, // next/all
+	}.encode()
+}
+
+func buildOnboardingTimezoneCallback(tz string) string {
+	// tz: "UTC+3", "UTC-7", "UTC+5:30"
+	return callbackData{
+		Action: actionOnboarding,
+		Params: []string{onboardingTimezone, tz},
 	}.encode()
 }
 

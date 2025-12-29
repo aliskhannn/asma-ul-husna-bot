@@ -466,24 +466,39 @@ func (s *ReminderService) ToggleReminder(ctx context.Context, userID int64) erro
 	return nil
 }
 
-// SnoozeReminder postpones the next reminder by marking last sent time.
+func ceilToNextTick(t time.Time, step time.Duration) time.Time {
+	if step <= 0 {
+		return t
+	}
+
+	// Truncate rounds down to a multiple of step since zero time. [web:377]
+	base := t.Truncate(step)
+	if base.Equal(t) {
+		return t
+	}
+	return base.Add(step)
+}
+
+// SnoozeReminder postpones the next reminder to the next scheduler tick after the given duration.
+// The tick is aligned to the user's configured reminder interval (e.g., every 2h/4h/6h).
 func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, duration time.Duration) error {
 	reminder, err := s.GetByUserID(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("get reminder: %w", err)
 	}
 
-	// nearest cron tick after duration (hour-aligned)
-	now := time.Now().UTC()
-	target := now.Add(duration)
-
-	next := target.Truncate(time.Hour)
-	if next.Before(target) {
-		next = next.Add(time.Hour)
+	step := time.Duration(reminder.IntervalHours) * time.Hour
+	if step <= 0 {
+		step = time.Hour
 	}
 
+	nowUTC := time.Now().UTC()
+	target := nowUTC.Add(duration)
+
+	next := ceilToNextTick(target, step)
+
 	reminder.NextSendAt = &next
-	reminder.UpdatedAt = time.Now().UTC()
+	reminder.UpdatedAt = nowUTC
 
 	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
 		return fmt.Errorf("upsert reminder: %w", err)
@@ -559,7 +574,6 @@ func (s *ReminderService) SetReminderTimeWindow(
 	userID int64,
 	startTime, endTime string,
 ) error {
-	// 1) Load reminder or create defaults
 	reminder, err := s.reminderRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrReminderNotFound) {
@@ -569,39 +583,35 @@ func (s *ReminderService) SetReminderTimeWindow(
 		}
 	}
 
-	// 2) Get timezone from user settings (single source of truth)
 	tz := "UTC"
 	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
 	if err == nil && settings != nil && settings.Timezone != "" {
 		tz = settings.Timezone
 	}
 
-	loc, err := time.LoadLocation(tz)
+	// Validate the configured daily time window. The values are treated as a "time of day"
+	// and must follow the "HH:MM:SS" format.
+	startTOD, err := time.Parse("15:04:05", startTime)
 	if err != nil {
-		return fmt.Errorf("invalid timezone: %w", err)
+		return fmt.Errorf("invalid start time: %w", err)
+	}
+	endTOD, err := time.Parse("15:04:05", endTime)
+	if err != nil {
+		return fmt.Errorf("invalid end time: %w", err)
+	}
+	if !endTOD.After(startTOD) {
+		return fmt.Errorf("invalid time window: endTime must be after startTime")
 	}
 
-	// 3) Validate time format (HH:MM:SS)
-	start, err := time.ParseInLocation("15:04:05", startTime, loc)
-	if err != nil {
-		return fmt.Errorf("invalid start time format: %w", err)
-	}
-	end, err := time.ParseInLocation("15:04:05", endTime, loc)
-	if err != nil {
-		return fmt.Errorf("invalid end time format: %w", err)
-	}
-	if end.Before(start) {
-		return fmt.Errorf("end time must be after start time")
-	}
+	nowUTC := time.Now().UTC()
 
-	// 4) Apply changes + enable
 	reminder.StartTime = startTime
 	reminder.EndTime = endTime
 	reminder.IsEnabled = true
-	reminder.UpdatedAt = time.Now().UTC()
+	reminder.UpdatedAt = nowUTC
 
-	// 5) Recalculate next_send_at immediately (important!)
-	next := reminder.CalculateNextSendAt(tz, time.Now().UTC())
+	// Recalculate the next send time immediately so the scheduler can pick it up right away.
+	next := reminder.CalculateNextSendAt(tz, nowUTC)
 	reminder.NextSendAt = &next
 
 	if err := s.reminderRepo.Upsert(ctx, reminder); err != nil {
