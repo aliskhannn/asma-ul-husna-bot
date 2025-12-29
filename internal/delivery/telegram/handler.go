@@ -14,6 +14,13 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
+type tzWaitState struct {
+	Flow            string // "onboarding" | "settings"
+	ChatID          int64
+	OwnerMessageID  int
+	PromptMessageID int
+}
+
 // Handler is responsible for processing Telegram updates and callbacks.
 type Handler struct {
 	bot              *tgbotapi.BotAPI
@@ -27,6 +34,8 @@ type Handler struct {
 	reminderService  ReminderService
 	dailyNameService DailyNameService
 	resetService     ResetService
+
+	tzInputWait map[int64]tzWaitState
 }
 
 // NewHandler creates a new Telegram handler with dependencies.
@@ -55,6 +64,8 @@ func NewHandler(
 		reminderService:  reminderService,
 		dailyNameService: dailyNameService,
 		resetService:     resetService,
+
+		tzInputWait: make(map[int64]tzWaitState),
 	}
 }
 
@@ -151,6 +162,11 @@ func (h *Handler) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 	text := strings.TrimSpace(update.Message.Text)
 
+	if _, ok := h.tzInputWait[from.ID]; ok {
+		_ = h.withErrorHandling(h.handleTimezoneText(text, from.ID, update.Message.MessageID))(ctx, chatID)
+		return
+	}
+
 	fields := strings.Fields(text)
 	if len(fields) == 2 {
 		from, err1 := strconv.Atoi(fields[0])
@@ -190,8 +206,6 @@ func (h *Handler) sendQuizResults(chatID int64, session *entities.QuizSession) e
 
 // sendQuizQuestionFromDB sends a quiz question from database with answer buttons.
 func (h *Handler) sendQuizQuestionFromDB(
-	ctx context.Context,
-	userID int64,
 	chatID int64,
 	session *entities.QuizSession,
 	question *entities.QuizQuestion,
@@ -311,4 +325,11 @@ func (h *Handler) removeInlineKeyboard(chatID int64, messageID int) {
 		tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
 	)
 	_, _ = h.bot.Request(edit)
+}
+
+func (h *Handler) setTZWaitState(userID int64, st tzWaitState) {
+	if old, ok := h.tzInputWait[userID]; ok && old.PromptMessageID != 0 {
+		_ = h.send(tgbotapi.NewDeleteMessage(old.ChatID, old.PromptMessageID))
+	}
+	h.tzInputWait[userID] = st
 }

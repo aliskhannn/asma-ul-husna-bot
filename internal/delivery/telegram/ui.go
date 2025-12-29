@@ -110,11 +110,10 @@ func buildNamesPerDayKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("1️⃣ (99 дней)", buildSettingsCallback(settingsNamesPerDay, "1")),
 			tgbotapi.NewInlineKeyboardButtonData("2️⃣ (50 дней)", buildSettingsCallback(settingsNamesPerDay, "2")),
-			tgbotapi.NewInlineKeyboardButtonData("3️⃣ (33 дня)", buildSettingsCallback(settingsNamesPerDay, "3")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("3️⃣ (33 дня)", buildSettingsCallback(settingsNamesPerDay, "3")),
 			tgbotapi.NewInlineKeyboardButtonData("5️⃣ (20 дней)", buildSettingsCallback(settingsNamesPerDay, "5")),
-			tgbotapi.NewInlineKeyboardButtonData("🔟 (10 дней)", buildSettingsCallback(settingsNamesPerDay, "10")),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
@@ -140,7 +139,7 @@ func buildQuizModeKeyboard() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-// buildRemindersKeyboard builds keyboard for reminder settings
+// buildRemindersKeyboard builds the reminder settings keyboard.
 func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKeyboardMarkup {
 	enabled := reminder != nil && reminder.IsEnabled
 
@@ -152,6 +151,9 @@ func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKey
 	rows := [][]tgbotapi.InlineKeyboardButton{
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(toggleText, buildReminderToggleCallback()),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🌍 Часовой пояс", buildSettingsCallback(settingsReminders, "timezone")),
 		),
 	}
 
@@ -166,11 +168,42 @@ func buildRemindersKeyboard(reminder *entities.UserReminders) tgbotapi.InlineKey
 		)
 	}
 
-	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
-	))
+	rows = append(rows,
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад к настройкам", buildSettingsCallback(settingsMenu)),
+		),
+	)
 
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// buildTimezoneKeyboard builds a simple UTC offset picker for MVP.
+func buildTimezoneKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+0", buildSettingsCallback(settingsReminders, "tz", "UTC+0")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+1", buildSettingsCallback(settingsReminders, "tz", "UTC+1")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+2", buildSettingsCallback(settingsReminders, "tz", "UTC+2")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+3", buildSettingsCallback(settingsReminders, "tz", "UTC+3")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+4", buildSettingsCallback(settingsReminders, "tz", "UTC+4")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+5", buildSettingsCallback(settingsReminders, "tz", "UTC+5")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+6", buildSettingsCallback(settingsReminders, "tz", "UTC+6")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+7", buildSettingsCallback(settingsReminders, "tz", "UTC+7")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+8", buildSettingsCallback(settingsReminders, "tz", "UTC+8")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+9", buildSettingsCallback(settingsReminders, "tz", "UTC+9")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+10", buildSettingsCallback(settingsReminders, "tz", "UTC+10")),
+			tgbotapi.NewInlineKeyboardButtonData("Другой", buildSettingsCallback(settingsReminders, "timezone_manual")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("« Назад", buildSettingsCallback(settingsReminders)),
+		),
+	)
 }
 
 // buildReminderKeyboard builds keyboard for reminder notification

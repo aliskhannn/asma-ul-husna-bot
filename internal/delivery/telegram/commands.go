@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -71,6 +72,117 @@ func (h *Handler) handleNumber(numStr string) HandlerFunc {
 
 		return nil
 	}
+}
+
+func (h *Handler) handleTimezoneText(text string, userID int64, userMsgID int) HandlerFunc {
+	return func(ctx context.Context, chatID int64) error {
+		st, ok := h.tzInputWait[userID]
+		if !ok {
+			return nil
+		}
+
+		tz, ok := normalizeUTCOffset(text)
+		if !ok {
+			msg := newPlainMessage(chatID, "Не понял формат. Пример: UTC+3 или UTC+5:30")
+			msg.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+			return h.send(msg)
+		}
+
+		if err := h.settingsService.UpdateTimezone(ctx, userID, tz); err != nil {
+			return h.send(newPlainMessage(chatID, msgInternalError))
+		}
+
+		// Cleanup messages (best-effort)
+		if st.PromptMessageID != 0 {
+			_ = h.send(tgbotapi.NewDeleteMessage(st.ChatID, st.PromptMessageID))
+		}
+		if userMsgID != 0 {
+			_ = h.send(tgbotapi.NewDeleteMessage(chatID, userMsgID))
+		}
+
+		delete(h.tzInputWait, userID)
+
+		switch st.Flow {
+		case "onboarding":
+			edit := newEdit(st.ChatID, st.OwnerMessageID, onboardingCompleteMessage())
+			kb := onboardingCompleteKeyboard()
+			edit.ReplyMarkup = &kb
+			return h.send(edit)
+
+		case "settings":
+			settings, err := h.settingsService.GetOrCreate(ctx, userID)
+			if err != nil {
+				msg := newPlainMessage(chatID, msgInternalError)
+				return h.send(msg)
+			}
+
+			// Return to reminders settings (edit the settings message, not onboarding)
+			rem, err := h.reminderService.GetByUserID(ctx, userID)
+			if err != nil {
+				return h.send(newPlainMessage(chatID, fmt.Sprintf("🌍 Часовой пояс сохранён: %s", tz)))
+			}
+
+			edit := newEdit(st.ChatID, st.OwnerMessageID, buildReminderSettingsMessage(settings.Timezone, rem))
+			kb := buildRemindersKeyboard(rem)
+			edit.ReplyMarkup = &kb
+
+			// optional: show toast via callback isn't possible here; send a short message if needed
+			_ = h.send(newPlainMessage(chatID, fmt.Sprintf("🌍 Часовой пояс: %s", tz)))
+
+			return h.send(edit)
+
+		default:
+			return nil
+		}
+	}
+}
+
+func normalizeUTCOffset(input string) (string, bool) {
+	s := strings.TrimSpace(input)
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ToUpper(s)
+
+	if strings.HasPrefix(s, "UTC") {
+		s = s[3:]
+		if s == "" {
+			return "UTC+0", true
+		}
+	}
+
+	if !(strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-")) {
+		return "", false
+	}
+
+	sign := s[:1]
+	rest := s[1:]
+
+	hh := rest
+	mm := "00"
+	if strings.Contains(rest, ":") {
+		parts := strings.Split(rest, ":")
+		if len(parts) != 2 {
+			return "", false
+		}
+		hh, mm = parts[0], parts[1]
+	}
+
+	h, err := strconv.Atoi(hh)
+	if err != nil {
+		return "", false
+	}
+	m, err := strconv.Atoi(mm)
+	if err != nil {
+		return "", false
+	}
+
+	if h < 0 || h > 14 || m < 0 || m >= 60 {
+		return "", false
+	}
+	if m%15 != 0 {
+		return "", false
+	}
+
+	return fmt.Sprintf("UTC%s%d:%02d", sign, h, m), true
 }
 
 func (h *Handler) handleToday(userID int64) HandlerFunc {
@@ -371,7 +483,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			}
 
 			_ = h.send(newMessage(chatID, md("📝 Продолжаем квиз...")))
-			return h.sendQuizQuestionFromDB(ctx, userID, chatID, activeSession, q, name, activeSession.CurrentQuestionNum, isFirstQuiz)
+			return h.sendQuizQuestionFromDB(chatID, activeSession, q, name, activeSession.CurrentQuestionNum, isFirstQuiz)
 		}
 
 		// Start new quiz session
@@ -434,7 +546,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			return h.send(newPlainMessage(chatID, msgQuizUnavailable))
 		}
 
-		return h.sendQuizQuestionFromDB(ctx, userID, chatID, session, q, name, 1, isFirstQuiz)
+		return h.sendQuizQuestionFromDB(chatID, session, q, name, 1, isFirstQuiz)
 	}
 }
 

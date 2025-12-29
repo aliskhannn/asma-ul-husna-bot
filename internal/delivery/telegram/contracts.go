@@ -37,6 +37,7 @@ type SettingsService interface {
 	UpdateNamesPerDay(ctx context.Context, userID int64, namesPerDay int) error
 	UpdateQuizMode(ctx context.Context, userID int64, quizMode string) error
 	UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error
+	UpdateTimezone(ctx context.Context, userID int64, timezone string) error
 }
 
 // QuizService interface for quiz-related operations.

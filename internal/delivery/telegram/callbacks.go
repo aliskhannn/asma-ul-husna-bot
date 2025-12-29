@@ -333,7 +333,13 @@ func (h *Handler) showReminderSettings(ctx context.Context, cb *tgbotapi.Callbac
 		return h.send(msg)
 	}
 
-	text := buildReminderSettingsMessage(reminder)
+	settings, err := h.settingsService.GetOrCreate(ctx, cb.From.ID)
+	if err != nil {
+		msg := newPlainMessage(cb.Message.Chat.ID, msgInternalError)
+		return h.send(msg)
+	}
+
+	text := buildReminderSettingsMessage(settings.Timezone, reminder)
 	keyboard := buildRemindersKeyboard(reminder)
 
 	edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
@@ -498,6 +504,57 @@ func (h *Handler) applyReminderSetting(ctx context.Context, cb *tgbotapi.Callbac
 		confirmText := fmt.Sprintf("📅 Частота: %s", formatIntervalHoursInt(interval))
 		return h.confirmSettingAndShowReminderSettings(ctx, cb, confirmText)
 
+	case "timezone":
+		tz := "UTC"
+		if st, err := h.settingsService.GetOrCreate(ctx, userID); err == nil && st != nil && st.Timezone != "" {
+			tz = st.Timezone
+		}
+
+		text := buildTimezoneMenuMessage(tz)
+		kb := buildTimezoneKeyboard()
+
+		edit := newEdit(cb.Message.Chat.ID, cb.Message.MessageID, text)
+		edit.ReplyMarkup = &kb
+		return h.send(edit)
+
+	case "tz":
+		// params: [settingsReminders, "tz", "UTC+3"]
+		if len(params) < 3 {
+			return nil
+		}
+		tz := params[2]
+
+		if err := h.settingsService.UpdateTimezone(ctx, userID, tz); err != nil {
+			msg := newPlainMessage(cb.Message.Chat.ID, msgInternalError)
+			return h.send(msg)
+		}
+
+		confirmText := fmt.Sprintf("🌍 Часовой пояс: %s", tz)
+		return h.confirmSettingAndShowReminderSettings(ctx, cb, confirmText)
+
+	case "timezone_manual":
+		chatID := cb.Message.Chat.ID
+
+		// send prompt first to get its message id
+		prompt := newPlainMessage(chatID,
+			"Введите часовой пояс в формате UTC+3 или UTC+5:30 (можно просто +3).\n\nПример: UTC+3",
+		)
+		prompt.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+
+		sent, err := h.bot.Send(prompt)
+		if err != nil {
+			return err
+		}
+
+		h.setTZWaitState(userID, tzWaitState{
+			Flow:            "settings",
+			ChatID:          chatID,
+			OwnerMessageID:  cb.Message.MessageID,
+			PromptMessageID: sent.MessageID,
+		})
+
+		return nil
+
 	default:
 		h.logger.Warn("unknown reminder sub-action", zap.String("value", value), zap.Strings("params", params))
 		return nil
@@ -644,7 +701,7 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 		return nil
 	}
 
-	err = h.sendQuizQuestionFromDB(ctx, userID, chatID, session, question, nextName, nextQuestionNum, false)
+	err = h.sendQuizQuestionFromDB(chatID, session, question, nextName, nextQuestionNum, false)
 	if err != nil {
 		h.logger.Error("failed to send next question", zap.Error(err))
 	}
@@ -714,6 +771,10 @@ func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.Cal
 			text = onboardingStep4Message()
 			k := onboardingStep4Keyboard()
 			kb = &k
+		case 5:
+			text = onboardingStepTimezoneMessage()
+			k := onboardingStepTimezoneKeyboard()
+			kb = &k
 		default:
 			text = onboardingStep1Message()
 			k := onboardingStep1Keyboard()
@@ -763,23 +824,70 @@ func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.Cal
 		if len(data.Params) != 2 {
 			return nil
 		}
-		choice := data.Params[1] // yes/no
+		choice := data.Params[1]
 
 		if choice == "yes" {
 			rem, err := h.reminderService.GetOrCreate(ctx, userID)
 			if err != nil {
 				return err
 			}
-
 			if rem == nil || !rem.IsEnabled {
 				if err := h.reminderService.ToggleReminder(ctx, userID); err != nil {
 					return err
 				}
-				rem, err = h.reminderService.GetByUserID(ctx, userID)
-				if err != nil {
-					return err
-				}
 			}
+
+			edit := newEdit(chatID, cb.Message.MessageID, onboardingStepTimezoneMessage())
+			kb := onboardingStepTimezoneKeyboard()
+			edit.ReplyMarkup = &kb
+			return h.send(edit)
+		}
+
+		if old, ok := h.tzInputWait[userID]; ok && old.PromptMessageID != 0 {
+			_ = h.send(tgbotapi.NewDeleteMessage(old.ChatID, old.PromptMessageID))
+		}
+		delete(h.tzInputWait, userID)
+
+		edit := newEdit(chatID, cb.Message.MessageID, onboardingCompleteMessage())
+		kb := onboardingCompleteKeyboard()
+		edit.ReplyMarkup = &kb
+		return h.send(edit)
+
+	case onboardingTimezone:
+		if len(data.Params) != 2 {
+			return nil
+		}
+		tz := data.Params[1]
+
+		// If there is any previous pending timezone input, cleanup it.
+		if old, ok := h.tzInputWait[userID]; ok && old.PromptMessageID != 0 {
+			_ = h.send(tgbotapi.NewDeleteMessage(old.ChatID, old.PromptMessageID))
+		}
+		delete(h.tzInputWait, userID)
+
+		if tz == "manual" {
+			prompt := newPlainMessage(chatID,
+				"Введите часовой пояс в формате UTC+3 или UTC+5:30 (можно просто +3).\n\nПример: UTC+3",
+			)
+			prompt.ReplyMarkup = tgbotapi.ForceReply{ForceReply: true}
+
+			sent, err := h.bot.Send(prompt)
+			if err != nil {
+				return err
+			}
+
+			h.setTZWaitState(userID, tzWaitState{
+				Flow:            "onboarding",
+				ChatID:          chatID,
+				OwnerMessageID:  cb.Message.MessageID,
+				PromptMessageID: sent.MessageID,
+			})
+
+			return nil
+		}
+
+		if err := h.settingsService.UpdateTimezone(ctx, userID, tz); err != nil {
+			return err
 		}
 
 		edit := newEdit(chatID, cb.Message.MessageID, onboardingCompleteMessage())

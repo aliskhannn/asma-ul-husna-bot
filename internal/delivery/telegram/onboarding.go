@@ -18,6 +18,7 @@ const (
 	StepNamesPerDay
 	StepLearningMode
 	StepReminders
+	StepTimezone
 	StepComplete
 )
 
@@ -31,6 +32,8 @@ func (s OnboardingStep) Message() string {
 		return onboardingStep3Message()
 	case StepReminders:
 		return onboardingStep4Message()
+	case StepTimezone:
+		return onboardingStepTimezoneMessage()
 	case StepComplete:
 		return onboardingCompleteMessage()
 	}
@@ -150,6 +153,44 @@ func onboardingStep4Keyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔔 Да, включить", buildOnboardingRemindersCallback("yes")),
 			tgbotapi.NewInlineKeyboardButtonData("Пока нет", buildOnboardingRemindersCallback("no")),
+		),
+	)
+}
+
+func onboardingStepTimezoneMessage() string {
+	var sb strings.Builder
+	sb.WriteString(md("Шаг 3 из 3"))
+	sb.WriteString("\n\n")
+	sb.WriteString(bold("Выберите ваш часовой пояс (UTC)"))
+	sb.WriteString("\n\n")
+	sb.WriteString(md("Это нужно, чтобы напоминания приходили по местному времени.\n"))
+	sb.WriteString(md("Пример: Москва — UTC+3."))
+	sb.WriteString("\n\n")
+	sb.WriteString(md("Можно поменять позже в /settings."))
+	return sb.String()
+}
+
+func onboardingStepTimezoneKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+0", buildOnboardingTimezoneCallback("UTC+0")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+1", buildOnboardingTimezoneCallback("UTC+1")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+2", buildOnboardingTimezoneCallback("UTC+2")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+3", buildOnboardingTimezoneCallback("UTC+3")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+4", buildOnboardingTimezoneCallback("UTC+4")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+5", buildOnboardingTimezoneCallback("UTC+5")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+6", buildOnboardingTimezoneCallback("UTC+6")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+7", buildOnboardingTimezoneCallback("UTC+7")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+8", buildOnboardingTimezoneCallback("UTC+8")),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("UTC+9", buildOnboardingTimezoneCallback("UTC+9")),
+			tgbotapi.NewInlineKeyboardButtonData("UTC+10", buildOnboardingTimezoneCallback("UTC+10")),
+			tgbotapi.NewInlineKeyboardButtonData("Другой", buildOnboardingTimezoneCallback("manual")),
 		),
 	)
 }

@@ -49,3 +49,7 @@ func (s *SettingsService) UpdateQuizMode(ctx context.Context, userID int64, quiz
 func (s *SettingsService) UpdateLearningMode(ctx context.Context, userID int64, learningMode string) error {
 	return s.repository.UpdateLearningMode(ctx, userID, learningMode)
 }
+
+func (s *SettingsService) UpdateTimezone(ctx context.Context, userID int64, timezone string) error {
+	return s.repository.UpdateTimezone(ctx, userID, timezone)
+}

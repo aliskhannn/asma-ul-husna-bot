@@ -72,65 +72,50 @@ func NewUserReminders(userID int64) *UserReminders {
 
 // CalculateNextSendAt calculates the next scheduled reminder time.
 // It ensures reminders are sent only at round hours (e.g., 8:00, 9:00).
-func (r *UserReminders) CalculateNextSendAt(timezone string, now time.Time) time.Time {
-	loc, err := time.LoadLocation(timezone)
+func (r *UserReminders) CalculateNextSendAt(timezone string, nowUTC time.Time) time.Time {
+	loc, err := ParseTimezoneLocation(timezone)
 	if err != nil {
 		loc = time.UTC
 	}
 
-	userNow := now.In(loc)
+	userNow := nowUTC.In(loc)
 
-	// Парсим как локальное "время дня" пользователя
-	startTime, err := time.ParseInLocation("15:04:05", r.StartTime, loc)
-	if err != nil {
-		// дефолт 08:00:00
-		startTime = time.Date(0, 1, 1, 8, 0, 0, 0, loc)
-	}
-	endTime, err := time.ParseInLocation("15:04:05", r.EndTime, loc)
-	if err != nil {
-		// дефолт 20:00:00
-		endTime = time.Date(0, 1, 1, 20, 0, 0, 0, loc)
-	}
+	y, m, d := userNow.Date()
 
-	startHour := startTime.Hour()
-	endHour := endTime.Hour()
+	startTOD, _ := time.Parse("15:04:05", r.StartTime)
+	endTOD, _ := time.Parse("15:04:05", r.EndTime)
 
-	currentHour := userNow.Hour()
+	startLocal := time.Date(y, m, d, startTOD.Hour(), startTOD.Minute(), startTOD.Second(), 0, loc)
+	endLocal := time.Date(y, m, d, endTOD.Hour(), endTOD.Minute(), endTOD.Second(), 0, loc)
 
-	// Find next valid hour
-	var nextHour int
-
-	if currentHour < startHour {
-		// Before start time today
-		nextHour = startHour
-	} else if currentHour >= endHour {
-		// After end time today, schedule for tomorrow's start
-		nextHour = startHour + 24
-	} else {
-		// Within window, find next interval-aligned hour
-		hoursSinceStart := currentHour - startHour
-		intervalsNeeded := (hoursSinceStart / r.IntervalHours) + 1
-		nextHour = startHour + (intervalsNeeded * r.IntervalHours)
-
-		// If next hour exceeds end time, schedule for tomorrow
-		if nextHour > endHour {
-			nextHour = startHour + 24
-		}
+	if !endLocal.After(startLocal) {
+		startLocal = time.Date(y, m, d, 8, 0, 0, 0, loc)
+		endLocal = time.Date(y, m, d, 20, 0, 0, 0, loc)
 	}
 
-	// Build next send time at the start of the hour (XX:00:00)
-	nextSendLocal := time.Date(
-		userNow.Year(), userNow.Month(), userNow.Day(),
-		nextHour%24, 0, 0, 0,
-		loc,
-	)
-
-	// Add day if needed
-	if nextHour >= 24 {
-		nextSendLocal = nextSendLocal.AddDate(0, 0, 1)
+	interval := time.Duration(r.IntervalHours) * time.Hour
+	if interval <= 0 {
+		interval = time.Hour
 	}
 
-	return nextSendLocal.UTC()
+	if userNow.Before(startLocal) {
+		return startLocal.UTC()
+	}
+
+	if !userNow.Before(endLocal) {
+		return startLocal.AddDate(0, 0, 1).UTC()
+	}
+
+	elapsed := userNow.Sub(startLocal)
+	k := elapsed / interval
+	next := startLocal.Add((k + 1) * interval)
+
+	if !next.Before(endLocal) {
+		next = startLocal.AddDate(0, 0, 1)
+	}
+	
+	next = next.Truncate(time.Second)
+	return next.UTC()
 }
 
 // CanSendNow checks if it's time to send a reminder.
