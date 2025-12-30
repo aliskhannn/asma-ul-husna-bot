@@ -189,6 +189,13 @@ func helpMessage() string {
 	sb.WriteString("\n")
 	sb.WriteString("1\\-99 — ")
 	sb.WriteString(md("конкретное имя по номеру"))
+	sb.WriteString("\n")
+	sb.WriteString("N M — ")
+	sb.WriteString(md("показать имена в диапазоне (N и M в пределах 1-99)"))
+	sb.WriteString("\n")
+	sb.WriteString(md("Пример: "))
+	sb.WriteString(bold("5 10"))
+	sb.WriteString(md(" — имена с 5 по 10"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString("⚙️ ")
@@ -201,7 +208,7 @@ func helpMessage() string {
 	sb.WriteString(md("режим, квиз, напоминания, имён в день"))
 	sb.WriteString("\n\n")
 
-	sb.WriteString(md("❓ Остались вопросы? Напишите @your_support"))
+	sb.WriteString(md("❓ Остались вопросы? Напишите @husna_support"))
 
 	return sb.String()
 }

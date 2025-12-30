@@ -940,7 +940,9 @@ func (h *Handler) handleResetCallback(ctx context.Context, cb *tgbotapi.Callback
 		}
 
 		_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID))
-		return h.send(newPlainMessage(chatID, "✅ Прогресс сброшен. Используйте /next чтобы начать заново."))
+		return h.send(newPlainMessage(chatID,
+			"✅ Прогресс и настройки сброшены.\n\n1) Откройте /settings и настройте режим/напоминания\n2) Затем используйте /today, чтобы начать обучение",
+		))
 
 	default:
 		return fmt.Errorf("unknown reset action: %q", data.Params[0])

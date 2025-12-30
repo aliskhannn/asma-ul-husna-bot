@@ -33,6 +33,7 @@ type Handler struct {
 	quizStorage      QuizStorage
 	reminderService  ReminderService
 	dailyNameService DailyNameService
+	reminderStorage  ReminderStorage
 	resetService     ResetService
 
 	tzInputWait map[int64]tzWaitState
@@ -50,6 +51,7 @@ func NewHandler(
 	quizStorage QuizStorage,
 	reminderService ReminderService,
 	dailyNameService DailyNameService,
+	reminderStorage ReminderStorage,
 	resetService ResetService,
 ) *Handler {
 	return &Handler{
@@ -63,6 +65,7 @@ func NewHandler(
 		quizStorage:      quizStorage,
 		reminderService:  reminderService,
 		dailyNameService: dailyNameService,
+		reminderStorage:  reminderStorage,
 		resetService:     resetService,
 
 		tzInputWait: make(map[int64]tzWaitState),
@@ -309,14 +312,26 @@ func (h *Handler) sendTodayList(ctx context.Context, chatID int64, userID int64,
 }
 
 // SendReminder sends a reminder notification to user
-func (h *Handler) SendReminder(chatID int64, payload entities.ReminderPayload) error {
+func (h *Handler) SendReminder(userID, chatID int64, payload entities.ReminderPayload) error {
 	text := buildReminderNotification(payload)
 	keyboard := buildReminderKeyboard()
+
+	if prev, ok := h.reminderStorage.Get(userID); ok && prev.MessageID != 0 {
+		_ = h.send(tgbotapi.NewDeleteMessage(prev.ChatID, prev.MessageID))
+		h.reminderStorage.Delete(userID)
+	}
 
 	msg := newMessage(chatID, text)
 	msg.ReplyMarkup = keyboard
 
-	return h.send(msg)
+	sent, err := h.bot.Send(msg)
+	if err != nil {
+		return err
+	}
+
+	h.reminderStorage.Store(userID, chatID, sent.MessageID)
+
+	return nil
 }
 
 func (h *Handler) removeInlineKeyboard(chatID int64, messageID int) {
