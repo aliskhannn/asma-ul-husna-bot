@@ -50,27 +50,27 @@ func main() {
 		},
 		{
 			Command:     "today",
-			Description: "Имена на сегодня (план формируется автоматически по «имён в день»)",
-		},
-		{
-			Command:     "random",
-			Description: "Случайное имя: Guided — из /today, Free — из всех 99",
+			Description: "Имена на сегодня",
 		},
 		{
 			Command:     "quiz",
-			Description: "Пройти квиз по изучаемым именам",
-		},
-		{
-			Command:     "all",
-			Description: "Показать все 99 имён",
+			Description: "Пройти квиз",
 		},
 		{
 			Command:     "progress",
 			Description: "Показать прогресс изучения",
 		},
 		{
+			Command:     "random",
+			Description: "Случайное имя",
+		},
+		{
+			Command:     "all",
+			Description: "Показать все 99 имён",
+		},
+		{
 			Command:     "settings",
-			Description: "Настройки (режим, квиз, напоминания, имён в день)",
+			Description: "Настройки",
 		},
 		{
 			Command:     "help",
@@ -78,7 +78,7 @@ func main() {
 		},
 		{
 			Command:     "reset",
-			Description: "Сбросить прогресс и настройки",
+			Description: "Сброс прогресса и настроек",
 		},
 	}
 
@@ -151,8 +151,9 @@ func main() {
 
 	resetService := service.NewResetService(tr)
 
-	// Initialize in-memory storage for quiz sessions.
+	// Initialize in-memory storages for quiz sessions and reminders.
 	quizStorage := storage.NewQuizStorage()
+	reminderStorage := storage.NewReminderStorage()
 
 	// Construct Telegram updates handler with all dependencies.
 	handler := telegram.NewHandler(
@@ -166,6 +167,7 @@ func main() {
 		quizStorage,
 		remindersService,
 		dailyNameService,
+		reminderStorage,
 		resetService,
 	)
 

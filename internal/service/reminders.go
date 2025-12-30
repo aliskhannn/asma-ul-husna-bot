@@ -197,7 +197,7 @@ func (s *ReminderService) processReminder(
 		Stats: *stats,
 	}
 
-	if err := s.notifier.SendReminder(rwu.ChatID, *payload); err != nil {
+	if err := s.notifier.SendReminder(rwu.UserID, rwu.ChatID, *payload); err != nil {
 		return fmt.Errorf("send notification: %w", err)
 	}
 

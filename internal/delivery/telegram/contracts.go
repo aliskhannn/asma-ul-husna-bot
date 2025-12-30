@@ -6,6 +6,7 @@ import (
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
+	"github.com/aliskhannn/asma-ul-husna-bot/internal/storage"
 )
 
 // UserService interface for user-related operations.
@@ -79,6 +80,12 @@ type QuizStorage interface {
 	StoreMessageID(sessionID int64, messageID int)
 	GetMessageID(sessionID int64) (int, bool)
 	DeleteMessageID(sessionID int64)
+}
+
+type ReminderStorage interface {
+	Store(userID int64, chatID int64, messageID int)
+	Get(userID int64) (storage.ReminderMessage, bool)
+	Delete(userID int64)
 }
 
 type ResetService interface {

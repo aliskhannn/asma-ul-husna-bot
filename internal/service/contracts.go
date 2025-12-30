@@ -95,7 +95,7 @@ type ReminderRepository interface {
 // ReminderNotifier sends reminder notifications to users.
 type ReminderNotifier interface {
 	// SendReminder sends a reminder message to a user.
-	SendReminder(chatID int64, payload entities.ReminderPayload) error
+	SendReminder(userID, chatID int64, payload entities.ReminderPayload) error
 }
 
 type DailyNameRepository interface {
