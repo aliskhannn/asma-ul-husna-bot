@@ -113,7 +113,7 @@ func (r *UserReminders) CalculateNextSendAt(timezone string, nowUTC time.Time) t
 	if !next.Before(endLocal) {
 		next = startLocal.AddDate(0, 0, 1)
 	}
-	
+
 	next = next.Truncate(time.Second)
 	return next.UTC()
 }
@@ -123,10 +123,20 @@ func (r *ReminderWithUser) CanSendNow(now time.Time) bool {
 	if !r.IsEnabled {
 		return false
 	}
-
 	if r.NextSendAt == nil {
-		return true // First reminder, should send
+		return true
+	}
+	if now.Before(*r.NextSendAt) {
+		return false
 	}
 
-	return !now.Before(*r.NextSendAt)
+	// Hard safety: do not send more often than IntervalHours since LastSentAt.
+	if r.LastSentAt != nil && r.IntervalHours > 0 {
+		minNext := r.LastSentAt.Add(time.Duration(r.IntervalHours) * time.Hour)
+		if now.Before(minNext) {
+			return false
+		}
+	}
+
+	return true
 }

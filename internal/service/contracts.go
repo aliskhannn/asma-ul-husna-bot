@@ -40,14 +40,12 @@ type ProgressRepository interface {
 	// GetNextDueName retrieves the next name due for review.
 	GetNextDueName(ctx context.Context, userID int64) (int, error)
 	GetNamesForIntroduction(ctx context.Context, userID int64, limit int) ([]int, error)
-	MarkAsIntroduced(ctx context.Context, userID int64, nameNumber int) error
 	GetLearningNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetRandomReinforcementNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	Upsert(ctx context.Context, progress *entities.UserProgress) error
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
 	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
-	CountIntroducedOnDate(ctx context.Context, userID int64, tz string) (int, error)
 }
 
 // QuizRepository defines operations for quiz session and answer persistence.
@@ -108,7 +106,7 @@ type DailyNameRepository interface {
 	GetNamesByDate(ctx context.Context, userID int64, dateUTC time.Time) ([]int, error)
 	GetNamesCountByDate(ctx context.Context, userID int64, dateUTC time.Time) (int, error)
 	AddNameForDate(ctx context.Context, userID int64, dateUTC time.Time, nameNumber int) error
-	GetCarryOverLearningFromPast(ctx context.Context, userID int64, todayDateUTC time.Time, limit int) ([]int, error)
+	GetCarryOverUnfinishedFromPast(ctx context.Context, userID int64, todayDateUTC time.Time, limit int) ([]int, error)
 }
 
 type ResetRepository interface {

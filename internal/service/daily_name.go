@@ -50,7 +50,7 @@ func (s *DailyNameService) EnsureTodayPlan(ctx context.Context, userID int64, tz
 		return nil
 	}
 
-	debt, err := s.dailyNameRepo.GetCarryOverLearningFromPast(ctx, userID, todayDateUTC, remaining)
+	debt, err := s.dailyNameRepo.GetCarryOverUnfinishedFromPast(ctx, userID, todayDateUTC, remaining)
 	if err != nil {
 		return err
 	}
@@ -81,9 +81,6 @@ func (s *DailyNameService) EnsureTodayPlan(ctx context.Context, userID int64, tz
 		for _, n := range newNums {
 			if _, exists := plannedSet[n]; exists {
 				continue
-			}
-			if err := s.progressRepo.MarkAsIntroduced(ctx, userID, n); err != nil {
-				return err
 			}
 			if err := s.dailyNameRepo.AddNameForDate(ctx, userID, todayDateUTC, n); err != nil {
 				return err

@@ -231,6 +231,7 @@ func nextHourUTC(t time.Time) time.Time {
 }
 
 // selectNameForReminder selects a name to send based on priority.
+// selectNameForReminder selects a name to send based on priority.
 func (s *ReminderService) selectNameForReminder(
 	ctx context.Context,
 	userID int64,
@@ -239,9 +240,102 @@ func (s *ReminderService) selectNameForReminder(
 ) (*entities.Name, entities.ReminderKind, error) {
 	prefer := preferredKind(last)
 
-	// Priority 1: Due names (SRS)
+	// Load settings first to get timezone and namesPerDay.
+	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, "", fmt.Errorf("get user settings: %w", err)
+	}
+
+	tz := "UTC"
+	namesPerDay := 1
+	learningMode := string(entities.ModeGuided)
+
+	if settings != nil {
+		if settings.Timezone != "" {
+			tz = settings.Timezone
+		}
+		if settings.NamesPerDay > 0 {
+			namesPerDay = settings.NamesPerDay
+		}
+		if settings.LearningMode != "" {
+			learningMode = settings.LearningMode
+		}
+	}
+
+	// Ensure today's plan exists before selecting from it.
+	// Guided mode respects "debt first" via the plan-filling logic.
+	if namesPerDay <= 0 {
+		namesPerDay = 1
+	}
+	todayDateUTC := localMidnightToUTCDate(tz, time.Now())
+
+	planned, err := s.dailyNameRepo.GetNamesByDate(ctx, userID, todayDateUTC)
+	if err != nil {
+		return nil, "", fmt.Errorf("get names by date: %w", err)
+	}
+
+	plannedSet := make(map[int]struct{}, len(planned))
+	for _, n := range planned {
+		plannedSet[n] = struct{}{}
+	}
+
+	remaining := namesPerDay - len(planned)
+	if remaining > 0 {
+		// Carry over learning names from previous plans first.
+		if learningMode == string(entities.ModeGuided) {
+			debt, err := s.dailyNameRepo.GetCarryOverUnfinishedFromPast(ctx, userID, todayDateUTC, remaining)
+			if err != nil {
+				return nil, "", fmt.Errorf("get carry over learning: %w", err)
+			}
+			for _, n := range debt {
+				if _, exists := plannedSet[n]; exists {
+					continue
+				}
+				if err := s.dailyNameRepo.AddNameForDate(ctx, userID, todayDateUTC, n); err != nil {
+					return nil, "", fmt.Errorf("add name for date: %w", err)
+				}
+				plannedSet[n] = struct{}{}
+				remaining--
+				if remaining == 0 {
+					break
+				}
+			}
+		}
+
+		// Fill the rest with not-yet-introduced names.
+		for remaining > 0 {
+			newNums, err := s.progressRepo.GetNamesForIntroduction(ctx, userID, remaining)
+			if err != nil {
+				return nil, "", fmt.Errorf("get names for introduction: %w", err)
+			}
+			if len(newNums) == 0 {
+				break
+			}
+
+			added := 0
+			for _, n := range newNums {
+				if _, exists := plannedSet[n]; exists {
+					continue
+				}
+				if err := s.dailyNameRepo.AddNameForDate(ctx, userID, todayDateUTC, n); err != nil {
+					return nil, "", fmt.Errorf("add name for date: %w", err)
+				}
+				plannedSet[n] = struct{}{}
+				added++
+				remaining--
+				if remaining == 0 {
+					break
+				}
+			}
+			if added == 0 {
+				break
+			}
+		}
+	}
+
+	// Priority 1: Due names (SRS).
 	var reviewName *entities.Name
-	if stats.DueToday > 0 {
+	if stats != nil && stats.DueToday > 0 {
 		nameNumber, err := s.progressRepo.GetNextDueName(ctx, userID)
 		if err != nil {
 			return nil, "", fmt.Errorf("get next due name: %w", err)
@@ -255,14 +349,28 @@ func (s *ReminderService) selectNameForReminder(
 		}
 	}
 
-	// Priority 2: TODAY's names (user_daily_name) - repeat current names
+	// Priority 2: Today's names (plan-based), but only not-mastered.
 	var studyName *entities.Name
 	todayNames, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
 	if err != nil {
 		return nil, "", fmt.Errorf("get today names: %w", err)
 	}
-	if len(todayNames) > 0 {
-		nameNumber := todayNames[rand.Intn(len(todayNames))]
+
+	candidates := make([]int, 0, len(todayNames))
+	for _, n := range todayNames {
+		streak, err := s.progressRepo.GetStreak(ctx, userID, n)
+		if err != nil {
+			// No progress means not mastered yet.
+			candidates = append(candidates, n)
+			continue
+		}
+		if streak < entities.MinStreakForMastery {
+			candidates = append(candidates, n)
+		}
+	}
+
+	if len(candidates) > 0 {
+		nameNumber := candidates[rand.Intn(len(candidates))]
 		name, err := s.nameRepo.GetByNumber(nameNumber)
 		if err != nil {
 			return nil, "", fmt.Errorf("get name by number: %w", err)
@@ -270,57 +378,27 @@ func (s *ReminderService) selectNameForReminder(
 		studyName = name
 	}
 
-	// Priority 3: NEW - Introduction based on namesPerDay quota (user_daily_name)
+	// "New" is defined as a planned name that has no progress record yet.
+	// This keeps ReminderService read-only and makes "new" depend on the daily plan.
 	var newName *entities.Name
-	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return nil, "", fmt.Errorf("get user settings: %w", err)
-	}
-	namesPerDay := 1
-	if settings != nil && settings.NamesPerDay > 0 {
-		namesPerDay = settings.NamesPerDay
-	}
+	for _, n := range todayNames {
+		_, err := s.progressRepo.Get(ctx, userID, n)
+		if err == nil {
+			continue
+		}
+		// Treat not found as "new"; other errors should be returned.
+		if !errors.Is(err, repository.ErrProgressNotFound) {
+			return nil, "", fmt.Errorf("get progress: %w", err)
+		}
 
-	allowNew := true
-	if settings != nil && settings.LearningMode == string(entities.ModeGuided) {
-		hasDebt, err := s.dailyNameRepo.HasUnfinishedDays(ctx, userID)
+		nm, err := s.nameRepo.GetByNumber(n)
 		if err != nil {
-			return nil, "", fmt.Errorf("has unfinished days: %w", err)
+			return nil, "", fmt.Errorf("get name by number: %w", err)
 		}
-		if hasDebt {
-			allowNew = false
-		}
+		newName = nm
+		break
 	}
 
-	if allowNew {
-		todayCount, err := s.dailyNameRepo.GetTodayNamesCount(ctx, userID)
-		if err != nil {
-			return nil, "", fmt.Errorf("get today names count: %w", err)
-		}
-
-		if todayCount < namesPerDay {
-			nums, err := s.progressRepo.GetNamesForIntroduction(ctx, userID, 1)
-			if err != nil {
-				return nil, "", fmt.Errorf("get names for introduction: %w", err)
-			}
-			if len(nums) > 0 {
-				n := nums[0]
-				if err := s.progressRepo.MarkAsIntroduced(ctx, userID, n); err != nil {
-					return nil, "", fmt.Errorf("mark as introduced: %w", err)
-				}
-				if err := s.dailyNameRepo.AddTodayName(ctx, userID, n); err != nil {
-					return nil, "", fmt.Errorf("add today name: %w", err)
-				}
-				nm, err := s.nameRepo.GetByNumber(n)
-				if err != nil {
-					return nil, "", fmt.Errorf("get name by number: %w", err)
-				}
-				newName = nm
-			}
-		}
-	}
-
-	// Priority 4: Random learned name for reinforcement
 	// prefer NEW
 	if prefer == entities.ReminderKindNew {
 		if newName != nil {

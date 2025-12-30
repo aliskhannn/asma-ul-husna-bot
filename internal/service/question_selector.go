@@ -13,6 +13,8 @@ type QuestionSelector struct {
 	progressRepo  ProgressRepository
 	settingsRepo  SettingsRepository
 	dailyNameRepo DailyNameRepository
+
+	rng *rand.Rand
 }
 
 // NewQuestionSelector creates a new QuestionSelector.
@@ -25,24 +27,27 @@ func NewQuestionSelector(
 		progressRepo:  progressRepo,
 		settingsRepo:  settingsRepo,
 		dailyNameRepo: dailyNameRepo,
+		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
-// SelectQuestions selects names for a quiz based on SRS priority and quiz mode.
+// SelectQuestions selects name numbers for a quiz based on SRS priority and the quiz mode.
+// Selection strategy depends on the learning mode (guided/free).
 func (s *QuestionSelector) SelectQuestions(
 	ctx context.Context,
 	userID int64,
 	total int,
 	quizMode string,
 ) ([]int, error) {
-	// Get user settings to check learning mode
-	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		// Default to guided mode if settings not found
-		settings = &entities.UserSettings{LearningMode: "guided"}
+	if total <= 0 {
+		return nil, nil
 	}
 
-	// Selection strategy depends on LEARNING MODE, not quiz mode
+	settings, err := s.settingsRepo.GetByUserID(ctx, userID)
+	if err != nil || settings == nil {
+		settings = &entities.UserSettings{LearningMode: string(entities.ModeGuided)}
+	}
+
 	switch settings.LearningMode {
 	case string(entities.ModeFree):
 		return s.selectFree(ctx, userID, total, quizMode)
@@ -58,7 +63,7 @@ func (s *QuestionSelector) selectGuided(ctx context.Context, userID int64, total
 	case "new":
 		return s.guidedNew(ctx, userID, total)
 	case "review":
-		return s.reviewOnly(ctx, userID, total) // одинаково для guided/free
+		return s.reviewOnly(ctx, userID, total)
 	case "mixed":
 		return s.guidedMixed(ctx, userID, total)
 	default:
@@ -66,6 +71,7 @@ func (s *QuestionSelector) selectGuided(ctx context.Context, userID int64, total
 	}
 }
 
+// guidedNew prioritizes debt (oldest unfinished) and then today's not-mastered names.
 func (s *QuestionSelector) guidedNew(ctx context.Context, userID int64, total int) ([]int, error) {
 	var out []int
 
@@ -86,34 +92,23 @@ func (s *QuestionSelector) guidedNew(ctx context.Context, userID int64, total in
 		return uniqueKeepOrder(out), nil
 	}
 
-	// 2) today: берём только НЕ выученные
 	today, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	filtered := make([]int, 0, len(today))
-	for _, n := range today {
-		streak, err := s.progressRepo.GetStreak(ctx, userID, n)
-		if err != nil {
-			// нет progress => считаем не выучено
-			filtered = append(filtered, n)
-			continue
-		}
-		if streak < 7 {
-			filtered = append(filtered, n)
-		}
+	today, err = s.filterNotMasteredByStreak(ctx, userID, today)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(filtered) > remaining {
-		filtered = filtered[:remaining]
-	}
-	out = append(out, filtered...)
+	today = takeFirst(today, remaining)
+	out = append(out, today...)
 
 	return uniqueKeepOrder(out), nil
 }
 
-// REVIEW-only (для guided/free): due -> learning -> reinforcement.
+// reviewOnly selects due first, then due learning, then reinforcement (mastered and not due).
 func (s *QuestionSelector) reviewOnly(ctx context.Context, userID int64, total int) ([]int, error) {
 	var out []int
 
@@ -121,10 +116,8 @@ func (s *QuestionSelector) reviewOnly(ctx context.Context, userID int64, total i
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, due...)
-
-	remaining := total - len(out)
-	if remaining <= 0 {
+	out, remaining := appendAndRemaining(out, due, total)
+	if remaining == 0 {
 		return uniqueKeepOrder(out), nil
 	}
 
@@ -132,10 +125,8 @@ func (s *QuestionSelector) reviewOnly(ctx context.Context, userID int64, total i
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, learning...)
-
-	remaining = total - len(out)
-	if remaining <= 0 {
+	out, remaining = appendAndRemaining(out, learning, total)
+	if remaining == 0 {
 		return uniqueKeepOrder(out), nil
 	}
 
@@ -148,46 +139,43 @@ func (s *QuestionSelector) reviewOnly(ctx context.Context, userID int64, total i
 	return uniqueKeepOrder(out), nil
 }
 
-// Guided mixed: due + learning + today + reinforcement, затем shuffle.
+// guidedMixed selects due, then today's not-mastered names, then due learning, then reinforcement.
+// The final list is shuffled to mix categories.
 func (s *QuestionSelector) guidedMixed(ctx context.Context, userID int64, total int) ([]int, error) {
 	var out []int
 
-	dueLimit := max(1, total*40/100)
+	dueLimit := calcDueLimit(total)
 	due, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, due...)
-
-	remaining := total - len(out)
-	if remaining <= 0 {
-		return shuffled(uniqueKeepOrder(out)), nil
-	}
-
-	learningLimit := min(max(1, total*30/100), remaining)
-	learning, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
-	if err != nil {
-		return nil, err
-	}
-	out = append(out, learning...)
-
-	remaining = total - len(out)
-	if remaining <= 0 {
-		return shuffled(uniqueKeepOrder(out)), nil
+	out, remaining := appendAndRemaining(out, due, total)
+	if remaining == 0 {
+		return s.shuffled(uniqueKeepOrder(out)), nil
 	}
 
 	today, err := s.dailyNameRepo.GetTodayNames(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if len(today) > remaining {
-		today = today[:remaining]
+	today, err = s.filterNotMasteredByStreak(ctx, userID, today)
+	if err != nil {
+		return nil, err
 	}
-	out = append(out, today...)
+	today = takeFirst(today, remaining)
+	out, remaining = appendAndRemaining(out, today, total)
+	if remaining == 0 {
+		return s.shuffled(uniqueKeepOrder(out)), nil
+	}
 
-	remaining = total - len(out)
-	if remaining <= 0 {
-		return shuffled(uniqueKeepOrder(out)), nil
+	learningLimit := calcLearningLimit(total, remaining)
+	learning, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
+	if err != nil {
+		return nil, err
+	}
+	out, remaining = appendAndRemaining(out, learning, total)
+	if remaining == 0 {
+		return s.shuffled(uniqueKeepOrder(out)), nil
 	}
 
 	reinf, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
@@ -196,10 +184,10 @@ func (s *QuestionSelector) guidedMixed(ctx context.Context, userID int64, total 
 	}
 	out = append(out, reinf...)
 
-	return shuffled(uniqueKeepOrder(out)), nil
+	return s.shuffled(uniqueKeepOrder(out)), nil
 }
 
-// Free selection: учитывает quizMode; NEW действительно вводит новые через GetNewNames.
+// selectFree selects questions for free learning mode based on quiz mode.
 func (s *QuestionSelector) selectFree(ctx context.Context, userID int64, total int, quizMode string) ([]int, error) {
 	switch quizMode {
 	case "review":
@@ -213,6 +201,7 @@ func (s *QuestionSelector) selectFree(ctx context.Context, userID int64, total i
 	}
 }
 
+// freeNew selects new names for introduction (free mode only).
 func (s *QuestionSelector) freeNew(ctx context.Context, userID int64, total int) ([]int, error) {
 	names, err := s.progressRepo.GetNewNames(ctx, userID, total)
 	if err != nil {
@@ -221,42 +210,37 @@ func (s *QuestionSelector) freeNew(ctx context.Context, userID int64, total int)
 	return uniqueKeepOrder(names), nil
 }
 
+// freeMixed selects due, then due learning, then new, then reinforcement and shuffles the result.
 func (s *QuestionSelector) freeMixed(ctx context.Context, userID int64, total int) ([]int, error) {
 	var out []int
 
-	dueLimit := max(1, total*40/100)
+	dueLimit := calcDueLimit(total)
 	due, err := s.progressRepo.GetNamesDueForReview(ctx, userID, dueLimit)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, due...)
-
-	remaining := total - len(out)
-	if remaining <= 0 {
-		return shuffled(uniqueKeepOrder(out)), nil
+	out, remaining := appendAndRemaining(out, due, total)
+	if remaining == 0 {
+		return s.shuffled(uniqueKeepOrder(out)), nil
 	}
 
-	learningLimit := min(max(1, total*30/100), remaining)
+	learningLimit := calcLearningLimit(total, remaining)
 	learning, err := s.progressRepo.GetLearningNames(ctx, userID, learningLimit)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, learning...)
-
-	remaining = total - len(out)
-	if remaining <= 0 {
-		return shuffled(uniqueKeepOrder(out)), nil
+	out, remaining = appendAndRemaining(out, learning, total)
+	if remaining == 0 {
+		return s.shuffled(uniqueKeepOrder(out)), nil
 	}
 
 	newNames, err := s.progressRepo.GetNewNames(ctx, userID, remaining)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, newNames...)
-
-	remaining = total - len(out)
-	if remaining <= 0 {
-		return shuffled(uniqueKeepOrder(out)), nil
+	out, remaining = appendAndRemaining(out, newNames, total)
+	if remaining == 0 {
+		return s.shuffled(uniqueKeepOrder(out)), nil
 	}
 
 	reinf, err := s.progressRepo.GetRandomReinforcementNames(ctx, userID, remaining)
@@ -265,18 +249,34 @@ func (s *QuestionSelector) freeMixed(ctx context.Context, userID int64, total in
 	}
 	out = append(out, reinf...)
 
-	return shuffled(uniqueKeepOrder(out)), nil
+	return s.shuffled(uniqueKeepOrder(out)), nil
 }
 
-// helpers
+// filterNotMasteredByStreak keeps names that are not mastered according to the streak threshold.
+// If progress does not exist, the name is treated as not mastered.
+func (s *QuestionSelector) filterNotMasteredByStreak(ctx context.Context, userID int64, nums []int) ([]int, error) {
+	out := make([]int, 0, len(nums))
+	for _, n := range nums {
+		streak, err := s.progressRepo.GetStreak(ctx, userID, n)
+		if err != nil {
+			out = append(out, n)
+			continue
+		}
+		if streak < entities.MinStreakForMastery {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
 
-func shuffled(in []int) []int {
+// shuffled returns a shuffled copy of the input slice.
+func (s *QuestionSelector) shuffled(in []int) []int {
 	out := append([]int(nil), in...)
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+	s.rng.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
 }
 
+// uniqueKeepOrder removes duplicates while preserving the original order.
 func uniqueKeepOrder(nums []int) []int {
 	seen := make(map[int]struct{}, len(nums))
 	out := make([]int, 0, len(nums))
@@ -288,4 +288,49 @@ func uniqueKeepOrder(nums []int) []int {
 		out = append(out, n)
 	}
 	return out
+}
+
+// takeFirst returns the first n elements of nums, or the whole slice if it is shorter.
+func takeFirst(nums []int, n int) []int {
+	if n <= 0 {
+		return nil
+	}
+	if len(nums) <= n {
+		return nums
+	}
+	return nums[:n]
+}
+
+// appendAndRemaining appends add to out and returns the updated out and remaining capacity up to total.
+func appendAndRemaining(out []int, add []int, total int) ([]int, int) {
+	out = append(out, add...)
+	rem := total - len(out)
+	if rem < 0 {
+		rem = 0
+	}
+	return out, rem
+}
+
+// calcDueLimit returns a due quota for mixed mode selection.
+func calcDueLimit(total int) int {
+	limit := total * 40 / 100
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > total {
+		limit = total
+	}
+	return limit
+}
+
+// calcLearningLimit returns a learning quota for mixed mode selection.
+func calcLearningLimit(total int, remaining int) int {
+	limit := total * 30 / 100
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > remaining {
+		limit = remaining
+	}
+	return limit
 }

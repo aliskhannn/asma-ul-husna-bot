@@ -103,16 +103,6 @@ func (s *ProgressService) GetStreak(ctx context.Context, userID int64, nameNumbe
 	return streak, nil
 }
 
-// IntroduceName marks a name as introduced to the user.
-func (s *ProgressService) IntroduceName(ctx context.Context, userID int64, nameNumber int) error {
-	err := s.progressRepo.MarkAsIntroduced(ctx, userID, nameNumber)
-	if err != nil {
-		return fmt.Errorf("introduce name: %w", err)
-	}
-
-	return nil
-}
-
 // GetDueNames retrieves all names that are due for review.
 func (s *ProgressService) GetDueNames(ctx context.Context, userID int64, limit int) ([]int, error) {
 	names, err := s.progressRepo.GetNamesDueForReview(ctx, userID, limit)
@@ -141,8 +131,4 @@ func (s *ProgressService) GetNewNames(ctx context.Context, userID int64, limit i
 	}
 
 	return names, nil
-}
-
-func (s *ProgressService) CountIntroducedToday(ctx context.Context, userID int64, tz string) (int, error) {
-	return s.progressRepo.CountIntroducedOnDate(ctx, userID, tz)
 }

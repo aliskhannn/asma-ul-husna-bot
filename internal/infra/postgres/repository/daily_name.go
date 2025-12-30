@@ -124,22 +124,23 @@ func (r *DailyNameRepository) AddNameForDate(ctx context.Context, userID int64, 
 	return nil
 }
 
-// GetCarryOverLearningFromPast returns unique nameNumbers that were planned before today
+// GetCarryOverUnfinishedFromPast returns unique nameNumbers that were planned before today
 // and are currently in PhaseLearning. Order is by oldest plan slot.
-func (r *DailyNameRepository) GetCarryOverLearningFromPast(ctx context.Context, userID int64, todayDateUTC time.Time, limit int) ([]int, error) {
+func (r *DailyNameRepository) GetCarryOverUnfinishedFromPast(ctx context.Context, userID int64, todayDateUTC time.Time, limit int) ([]int, error) {
 	todayDateUTC = todayDateUTC.UTC().Truncate(24 * time.Hour)
 
 	query := `
         SELECT DISTINCT ON (udn.name_number) udn.name_number
-        FROM public.user_daily_name udn
-        JOIN user_progress up
-          ON up.user_id = udn.user_id AND up.name_number = udn.name_number
-        WHERE udn.user_id = $1
-          AND udn.date_utc < $2
-          AND up.phase = 'learning'
-        ORDER BY udn.name_number, udn.date_utc, udn.slot_index
-        LIMIT $3
+		FROM public.user_daily_name udn
+		LEFT JOIN user_progress up
+  			ON up.user_id = udn.user_id AND up.name_number = udn.name_number
+		WHERE udn.user_id = $1
+  			AND udn.date_utc < $2
+  			AND COALESCE(up.streak, 0) < 7
+		ORDER BY udn.name_number, udn.date_utc, udn.slot_index
+		LIMIT $3;
     `
+	
 	rows, err := r.db.Query(ctx, query, userID, todayDateUTC, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get carry over learning: %w", err)
