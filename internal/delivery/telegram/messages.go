@@ -50,7 +50,7 @@ const (
 
 const (
 	lrm          = "\u200E"
-	namesPerPage = 5
+	namesPerPage = 3
 )
 
 // md escapes plain text for MarkdownV2.

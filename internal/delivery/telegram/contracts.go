@@ -25,11 +25,11 @@ type NameService interface {
 // ProgressService interface for progress-related operations.
 type ProgressService interface {
 	GetProgressSummary(ctx context.Context, userID int64) (*service.ProgressSummary, error)
-	IntroduceName(ctx context.Context, userID int64, nameNumber int) error
+	//IntroduceName(ctx context.Context, userID int64, nameNumber int) error
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
 	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
-	CountIntroducedToday(ctx context.Context, userID int64, tz string) (int, error)
+	//CountIntroducedToday(ctx context.Context, userID int64, tz string) (int, error)
 }
 
 // SettingsService interface for settings-related operations.

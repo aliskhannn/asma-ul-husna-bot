@@ -158,26 +158,6 @@ func (r *ProgressRepository) GetStreak(ctx context.Context, userID int64, nameNu
 	return streak, nil
 }
 
-func (r *ProgressRepository) CountIntroducedOnDate(ctx context.Context, userID int64, tz string) (int, error) {
-	if tz == "" {
-		tz = "UTC"
-	}
-
-	query := `
-		SELECT COUNT(*)
-		FROM user_progress
-		WHERE user_id = $1
-  			AND introduced_at IS NOT NULL
-  			AND (introduced_at AT TIME ZONE $2)::date = (NOW() AT TIME ZONE $2)::date
-`
-
-	var cnt int
-	if err := r.db.QueryRow(ctx, query, userID, tz).Scan(&cnt); err != nil {
-		return 0, fmt.Errorf("count introduced today: %w", err)
-	}
-	return cnt, nil
-}
-
 // GetNamesDueForReview retrieves names that need review based on SRS.
 func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID int64, limit int) ([]int, error) {
 	query := `
@@ -211,15 +191,14 @@ func (r *ProgressRepository) GetNamesDueForReview(ctx context.Context, userID in
 // GetLearningNames retrieves names in the learning phase that need practice.
 func (r *ProgressRepository) GetLearningNames(ctx context.Context, userID int64, limit int) ([]int, error) {
 	query := `
-			SELECT name_number
-			FROM user_progress
-			WHERE user_id = $1
-			  AND phase = 'learning'
-			  AND (next_review_at IS NULL OR next_review_at <= NOW())
-			ORDER BY 
-				COALESCE(next_review_at, last_reviewed_at) NULLS FIRST
-			LIMIT $2
-		`
+		SELECT name_number
+		FROM user_progress
+		WHERE user_id = $1
+		  AND phase = 'learning'
+		  AND (next_review_at IS NULL OR next_review_at <= NOW())
+		ORDER BY COALESCE(next_review_at, last_reviewed_at) NULLS FIRST
+		LIMIT $2
+	`
 
 	rows, err := r.db.Query(ctx, query, userID, limit)
 	if err != nil {
@@ -235,7 +214,6 @@ func (r *ProgressRepository) GetLearningNames(ctx context.Context, userID int64,
 		}
 		nameNumbers = append(nameNumbers, num)
 	}
-
 	return nameNumbers, rows.Err()
 }
 
@@ -310,8 +288,9 @@ func (r *ProgressRepository) GetRandomReinforcementNames(ctx context.Context, us
 		SELECT name_number
 		FROM user_progress
 		WHERE user_id = $1
-		  AND phase IN ('learning', 'mastered')
+		  AND phase = 'mastered'
 		  AND review_count > 0
+		  AND (next_review_at IS NULL OR next_review_at > NOW())
 		ORDER BY RANDOM()
 		LIMIT $2
 	`
@@ -330,31 +309,7 @@ func (r *ProgressRepository) GetRandomReinforcementNames(ctx context.Context, us
 		}
 		nameNumbers = append(nameNumbers, num)
 	}
-
 	return nameNumbers, rows.Err()
-}
-
-// MarkAsIntroduced marks a name as introduced to the user (first time viewing).
-func (r *ProgressRepository) MarkAsIntroduced(ctx context.Context, userID int64, nameNumber int) error {
-	now := time.Now()
-	nextReview := now.Add(24 * time.Hour)
-
-	query := `
-		INSERT INTO user_progress (
-			user_id, name_number, phase, ease, streak, interval_days,
-			next_review_at, review_count, correct_count, 
-			first_seen_at, last_reviewed_at, introduced_at, created_at, updated_at
-		)
-		VALUES ($1, $2, 'new', 2.5, 0, 1, $3, 0, 0, $4, $4, $4, $4, $4)
-		ON CONFLICT (user_id, name_number) DO NOTHING
-	`
-
-	_, err := r.db.Exec(ctx, query, userID, nameNumber, nextReview, now)
-	if err != nil {
-		return fmt.Errorf("mark as introduced: %w", err)
-	}
-
-	return nil
 }
 
 // ProgressStats contains user progress statistics for /progress command.

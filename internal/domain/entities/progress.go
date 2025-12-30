@@ -7,7 +7,6 @@ type AnswerQuality string
 
 const (
 	QualityFail AnswerQuality = "fail" // incorrect answer
-	QualityHard AnswerQuality = "hard" // correct, but difficult
 	QualityGood AnswerQuality = "good" // correct, easy
 )
 
@@ -87,20 +86,6 @@ func (p *UserProgress) UpdateSRS(quality AnswerQuality, now time.Time) {
 			p.Phase = PhaseLearning
 		}
 
-	case QualityHard:
-		p.Streak++
-		p.CorrectCount++
-		p.Ease = max(1.3, p.Ease-0.15)
-
-		// Calculate interval with reduction factor
-		baseInterval := calculateIntervalDays(p.Ease, p.Streak)
-		p.IntervalDays = int(float64(baseInterval) * 0.7)
-
-		next := now.Add(time.Duration(p.IntervalDays) * 24 * time.Hour)
-		p.NextReviewAt = &next
-
-		p.updatePhase()
-
 	case QualityGood:
 		p.Streak++
 		p.CorrectCount++
@@ -125,16 +110,6 @@ func (p *UserProgress) updatePhase() {
 	if p.Phase == PhaseNew && (p.Streak >= MinStreakForLearning || p.ReviewCount >= 2) {
 		p.Phase = PhaseLearning
 		return
-	}
-}
-
-// MarkAsIntroduced marks a name as introduced to the user for the first time.
-func (p *UserProgress) MarkAsIntroduced(now time.Time) {
-	if p.Phase == PhaseNew && p.FirstSeenAt == nil {
-		p.FirstSeenAt = &now
-		next := now.Add(24 * time.Hour)
-		p.NextReviewAt = &next
-		p.LastReviewedAt = &now
 	}
 }
 
@@ -185,8 +160,5 @@ func DetermineQuality(isCorrect bool, isFirstAttempt bool) AnswerQuality {
 	if !isCorrect {
 		return QualityFail
 	}
-	if isFirstAttempt {
-		return QualityGood
-	}
-	return QualityHard
+	return QualityGood
 }
