@@ -19,7 +19,7 @@ The bot keeps a daily learning plan based on your settings (especially “names 
 Use quizzes to consolidate learning, and reminders to stay consistent.
 
 Recommended loop:
-- `/today → (optional: 🔊 Listen) → /quiz → /progress`
+- `/today → /quiz → /progress`
 
 ## Commands
 

@@ -105,6 +105,8 @@ func (h *Handler) handleNameCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 
 	return h.send(edit)
 }
+
+// handleTodayCallback handles callbacks for the "today" flow.
 func (h *Handler) handleTodayCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	if cb.Message == nil {
 		return nil
@@ -142,7 +144,7 @@ func (h *Handler) handleTodayCallback(ctx context.Context, cb *tgbotapi.Callback
 
 		name, err := h.nameService.GetByNumber(ctx, nameNumber)
 		if err != nil || name == nil || name.Audio == "" {
-			return h.answerCallback(cb.ID, "Аудио недоступно")
+			return h.answerCallback(cb.ID, "Audio is unavailable")
 		}
 
 		audio := buildNameAudio(name, chatID)
@@ -324,7 +326,7 @@ func (h *Handler) showSettingsSubmenu(cb *tgbotapi.CallbackQuery, message string
 	return h.send(edit)
 }
 
-// showReminderSettings displays reminder settings screen
+// showReminderSettings displays reminder settings screen.
 func (h *Handler) showReminderSettings(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	reminder, err := h.reminderService.GetByUserID(ctx, cb.From.ID)
 	if err != nil {
@@ -381,7 +383,7 @@ func (h *Handler) applyQuizMode(ctx context.Context, cb *tgbotapi.CallbackQuery,
 	return h.confirmSettingAndShowMenu(ctx, cb, fmt.Sprintf("Режим квиза: %s", formatQuizMode(value)))
 }
 
-// handleReminderCallback handles reminder action callbacks
+// handleReminderCallback handles reminder action callbacks.
 func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	data := decodeCallback(cb.Data)
 
@@ -446,7 +448,7 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 	}
 }
 
-// applyReminderSetting applies reminder setting changes
+// applyReminderSetting applies reminder setting changes.
 func (h *Handler) applyReminderSetting(ctx context.Context, cb *tgbotapi.CallbackQuery, value string, params []string) error {
 	userID := cb.From.ID
 
@@ -554,7 +556,7 @@ func (h *Handler) applyReminderSetting(ctx context.Context, cb *tgbotapi.Callbac
 	}
 }
 
-// showFrequencyMenu displays frequency selection menu
+// showFrequencyMenu displays frequency selection menu.
 func (h *Handler) showFrequencyMenu(_ context.Context, cb *tgbotapi.CallbackQuery) error {
 	text := "📅 " + bold("Как часто отправлять напоминания?") + "\n\n" +
 		md("Выберите частоту напоминаний в день:")
@@ -566,7 +568,7 @@ func (h *Handler) showFrequencyMenu(_ context.Context, cb *tgbotapi.CallbackQuer
 	return h.send(edit)
 }
 
-// showTimeWindowMenu displays time window selection menu
+// showTimeWindowMenu displays time window selection menu.
 func (h *Handler) showTimeWindowMenu(_ context.Context, cb *tgbotapi.CallbackQuery) error {
 	text := "⏰ " + bold("В какое время отправлять напоминания?") + "\n\n" +
 		md("Выберите временной диапазон для напоминаний:")
@@ -587,7 +589,7 @@ func (h *Handler) confirmSettingAndShowMenu(ctx context.Context, cb *tgbotapi.Ca
 	return h.showSettingsMenu(ctx, cb)
 }
 
-// confirmSettingAndShowReminderSettings shows confirmation and returns to reminder settings
+// confirmSettingAndShowReminderSettings shows confirmation and returns to reminder settings.
 func (h *Handler) confirmSettingAndShowReminderSettings(ctx context.Context, cb *tgbotapi.CallbackQuery, confirmText string) error {
 	confirm := tgbotapi.NewCallback(cb.ID, confirmText)
 	if _, err := h.bot.Request(confirm); err != nil {
@@ -601,12 +603,12 @@ func (h *Handler) confirmSettingAndShowReminderSettings(ctx context.Context, cb 
 func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	data := decodeCallback(cb.Data)
 
-	// Handle "start quiz" action
+	// Handle "start quiz" action.
 	if len(data.Params) == 1 && data.Params[0] == quizStart {
 		return h.handleQuiz(cb.From.ID)(ctx, cb.Message.Chat.ID)
 	}
 
-	// Handle quiz answer: quiz:sessionID:questionNum:answerIndex
+	// Handle quiz answer: quiz:sessionID:questionNum:answerIndex.
 	if len(data.Params) < 3 {
 		h.logger.Warn("invalid quiz callback params", zap.String("raw", data.Raw))
 		return nil
@@ -630,7 +632,7 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 	userID := cb.From.ID
 	chatID := cb.Message.Chat.ID
 
-	// Submit answer with index
+	// Submit answer with index.
 	result, err := h.quizService.SubmitAnswer(ctx, sessionID, userID, strconv.Itoa(answerIndex))
 	if err != nil {
 		if strings.Contains(err.Error(), "already submitted") {
@@ -645,11 +647,11 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 		return h.answerCallback(cb.ID, "Ошибка при проверке ответа")
 	}
 
-	// Delete question message
+	// Delete question message.
 	deleteMsg := tgbotapi.NewDeleteMessage(chatID, cb.Message.MessageID)
 	_ = h.send(deleteMsg)
 
-	// Send feedback
+	// Send feedback.
 	feedbackText := formatAnswerFeedback(result.IsCorrect, result.CorrectAnswer)
 	feedbackMsg := newMessage(chatID, feedbackText)
 	_, err = h.bot.Send(feedbackMsg)
@@ -657,12 +659,12 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 		h.logger.Error("failed to send feedback", zap.Error(err))
 	}
 
-	// Check if quiz is completed
+	// Check if quiz is completed.
 	if result.IsSessionComplete {
-		// Clear storage
+		// Clear storage.
 		h.quizStorage.Delete(sessionID)
 
-		// Build session summary
+		// Build session summary.
 		completedSession := &entities.QuizSession{
 			ID:             sessionID,
 			CorrectAnswers: result.Score,
@@ -672,7 +674,7 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 		return h.sendQuizResults(chatID, completedSession)
 	}
 
-	// Send next question
+	// Send next question.
 	nextQuestionNum := questionNum + 1
 	question, nextName, err := h.quizService.GetCurrentQuestion(ctx, sessionID, nextQuestionNum)
 	if err != nil {
@@ -684,7 +686,7 @@ func (h *Handler) handleQuizCallback(ctx context.Context, cb *tgbotapi.CallbackQ
 		return h.answerCallback(cb.ID, "Ошибка при загрузке следующего вопроса")
 	}
 
-	// Get active session to pass correct data
+	// Get active session to pass correct data.
 	session, err := h.quizService.GetActiveSession(ctx, userID)
 	if err != nil {
 		h.logger.Error("failed to get active session",
@@ -722,6 +724,7 @@ func (h *Handler) handleProgressCallback(ctx context.Context, cb *tgbotapi.Callb
 	return h.send(edit)
 }
 
+// handleOnboardingCallback handles onboarding-related callbacks.
 func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	if cb.Message == nil {
 		return nil
@@ -738,7 +741,6 @@ func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.Cal
 	sub := data.Params[0]
 
 	switch sub {
-
 	case onboardingStep:
 		if len(data.Params) != 2 {
 			return nil
@@ -908,6 +910,7 @@ func (h *Handler) handleOnboardingCallback(ctx context.Context, cb *tgbotapi.Cal
 	return nil
 }
 
+// handleResetCallback handles reset progress callbacks.
 func (h *Handler) handleResetCallback(ctx context.Context, cb *tgbotapi.CallbackQuery) error {
 	data := decodeCallback(cb.Data)
 	userID := cb.From.ID
@@ -942,7 +945,7 @@ func (h *Handler) handleResetCallback(ctx context.Context, cb *tgbotapi.Callback
 	}
 }
 
-// answerCallback sends a callback answer (removes loading indicator).
+// answerCallback sends a callback answer and removes the loading indicator.
 func (h *Handler) answerCallback(callbackID, text string) error {
 	callback := tgbotapi.NewCallback(callbackID, text)
 	_, err := h.bot.Request(callback)

@@ -14,6 +14,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 )
 
+// tzWaitState stores state for awaiting a timezone input via ForceReply.
 type tzWaitState struct {
 	Flow            string // "onboarding" | "settings"
 	ChatID          int64
@@ -241,6 +242,7 @@ func (h *Handler) sendQuizQuestionFromDB(
 	return nil
 }
 
+// sendNameCard sends a name card message (and optional audio) to the specified chat.
 func (h *Handler) sendNameCard(ctx context.Context, chatID int64, nameNumber int, audioEnabled bool) error {
 	msg, audio, err := buildNameResponse(ctx, func(ctx context.Context) (*entities.Name, error) {
 		return h.nameService.GetByNumber(ctx, nameNumber)
@@ -334,6 +336,7 @@ func (h *Handler) SendReminder(userID, chatID int64, payload entities.ReminderPa
 	return nil
 }
 
+// removeInlineKeyboard clears the inline keyboard for an existing message.
 func (h *Handler) removeInlineKeyboard(chatID int64, messageID int) {
 	edit := tgbotapi.NewEditMessageReplyMarkup(
 		chatID, messageID,
@@ -342,6 +345,7 @@ func (h *Handler) removeInlineKeyboard(chatID int64, messageID int) {
 	_, _ = h.bot.Request(edit)
 }
 
+// setTZWaitState sets the current timezone input wait state and replaces any previous prompt.
 func (h *Handler) setTZWaitState(userID int64, st tzWaitState) {
 	if old, ok := h.tzInputWait[userID]; ok && old.PromptMessageID != 0 {
 		_ = h.send(tgbotapi.NewDeleteMessage(old.ChatID, old.PromptMessageID))
