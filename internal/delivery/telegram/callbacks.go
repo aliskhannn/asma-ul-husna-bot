@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"go.uber.org/zap"
@@ -409,13 +408,7 @@ func (h *Handler) handleReminderCallback(ctx context.Context, cb *tgbotapi.Callb
 		return h.handleQuiz(userID)(ctx, chatID)
 
 	case reminderSnooze:
-		reminder, err := h.reminderService.GetByUserID(ctx, cb.From.ID)
-		if err != nil {
-			return err
-		}
-
-		duration := time.Duration(reminder.IntervalHours) * time.Hour
-		if err := h.reminderService.SnoozeReminder(ctx, userID, duration); err != nil {
+		if err := h.reminderService.SnoozeReminder(ctx, userID); err != nil {
 			return err
 		}
 

@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"time"
 
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/domain/entities"
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
@@ -57,7 +56,7 @@ type ReminderService interface {
 	ToggleReminder(ctx context.Context, userID int64) error
 	SetReminderIntervalHours(ctx context.Context, userID int64, intervalHours int) error
 	SetReminderTimeWindow(ctx context.Context, userID int64, startTime, endTime string) error
-	SnoozeReminder(ctx context.Context, userID int64, duration time.Duration) error
+	SnoozeReminder(ctx context.Context, userID int64) error
 	DisableReminder(ctx context.Context, userID int64) error
 }
 
