@@ -131,16 +131,16 @@ func (r *DailyNameRepository) GetCarryOverUnfinishedFromPast(ctx context.Context
 
 	query := `
         SELECT DISTINCT ON (udn.name_number) udn.name_number
-		FROM public.user_daily_name udn
+		FROM user_daily_name udn
 		LEFT JOIN user_progress up
   			ON up.user_id = udn.user_id AND up.name_number = udn.name_number
 		WHERE udn.user_id = $1
-  			AND udn.date_utc < $2
-  			AND COALESCE(up.streak, 0) < 7
-		ORDER BY udn.name_number, udn.date_utc, udn.slot_index
+  		AND udn.date_utc < $2
+  		AND COALESCE(up.streak, 0) < 7
+		ORDER BY udn.name_number, udn.date_utc DESC, udn.slot_index DESC
 		LIMIT $3;
     `
-	
+
 	rows, err := r.db.Query(ctx, query, userID, todayDateUTC, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get carry over learning: %w", err)

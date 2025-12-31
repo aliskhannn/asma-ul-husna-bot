@@ -24,11 +24,9 @@ type NameService interface {
 // ProgressService interface for progress-related operations.
 type ProgressService interface {
 	GetProgressSummary(ctx context.Context, userID int64) (*service.ProgressSummary, error)
-	//IntroduceName(ctx context.Context, userID int64, nameNumber int) error
 	GetNewNames(ctx context.Context, userID int64, limit int) ([]int, error)
 	GetStreak(ctx context.Context, userID int64, nameNumber int) (int, error)
 	GetByNumbers(ctx context.Context, userID int64, nums []int) (map[int]*entities.UserProgress, error)
-	//CountIntroducedToday(ctx context.Context, userID int64, tz string) (int, error)
 }
 
 // SettingsService interface for settings-related operations.
@@ -60,6 +58,7 @@ type ReminderService interface {
 	DisableReminder(ctx context.Context, userID int64) error
 }
 
+// DailyNameService provides daily plan operations for selecting and tracking names.
 type DailyNameService interface {
 	GetTodayNames(ctx context.Context, userID int64) ([]int, error)
 	GetTodayNamesCount(ctx context.Context, userID int64) (int, error)
@@ -81,12 +80,14 @@ type QuizStorage interface {
 	DeleteMessageID(sessionID int64)
 }
 
+// ReminderStorage stores reminder message metadata in memory.
 type ReminderStorage interface {
 	Store(userID int64, chatID int64, messageID int)
 	Get(userID int64) (storage.ReminderMessage, bool)
 	Delete(userID int64)
 }
 
+// ResetService resets user progress and settings.
 type ResetService interface {
 	ResetUser(ctx context.Context, userID int64) error
 }

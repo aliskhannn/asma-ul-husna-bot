@@ -206,6 +206,9 @@ func helpMessage() string {
 	sb.WriteString("\n")
 	sb.WriteString("/settings — ")
 	sb.WriteString(md("режим, квиз, напоминания, имён в день"))
+	sb.WriteString("\n")
+	sb.WriteString("/reset — ")
+	sb.WriteString(md("сбросить прогресс и настройки"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(md("❓ Остались вопросы? Напишите @husna_support"))
@@ -691,6 +694,7 @@ func buildFirstQuizMessage() string {
 	sb.WriteString("\n")
 	sb.WriteString(md("• Выберите правильный ответ из вариантов\n"))
 	sb.WriteString(md("• 2+ правильных ответа = имя начнёт изучаться\n"))
+	sb.WriteString(md("• 7 правильных ответов = имя считается изученным\n"))
 	sb.WriteString(md("• Я буду повторять имена по графику"))
 
 	return sb.String()

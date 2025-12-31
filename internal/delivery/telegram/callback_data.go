@@ -67,7 +67,7 @@ type callbackData struct {
 	Raw    string
 }
 
-// encode creates callback string.
+// encode creates a callback string representation of callbackData.
 func (cd callbackData) encode() string {
 	if len(cd.Params) == 0 {
 		return cd.Action
@@ -75,7 +75,7 @@ func (cd callbackData) encode() string {
 	return cd.Action + ":" + strings.Join(cd.Params, ":")
 }
 
-// decodeCallback parses callback data string.
+// decodeCallback parses a raw callback data string into callbackData.
 func decodeCallback(data string) callbackData {
 	parts := strings.Split(data, ":")
 	if len(parts) == 0 {
@@ -89,6 +89,7 @@ func decodeCallback(data string) callbackData {
 	}
 }
 
+// buildTodayPageCallback builds callback data for navigating pages in the "today" view.
 func buildTodayPageCallback(page int) string {
 	return callbackData{
 		Action: actionToday,
@@ -96,6 +97,7 @@ func buildTodayPageCallback(page int) string {
 	}.encode()
 }
 
+// buildTodayAudioCallback builds callback data for requesting audio for a specific name in the "today" view.
 func buildTodayAudioCallback(nameNumber int) string {
 	return callbackData{
 		Action: actionToday,
@@ -187,6 +189,7 @@ func buildReminderDisableCallback() string {
 	}.encode()
 }
 
+// buildOnboardingStepCallback builds callback data for navigating an onboarding step.
 func buildOnboardingStepCallback(step int) string {
 	return callbackData{
 		Action: actionOnboarding,
@@ -194,6 +197,7 @@ func buildOnboardingStepCallback(step int) string {
 	}.encode()
 }
 
+// buildOnboardingNamesPerDayCallback builds callback data for selecting names-per-day during onboarding.
 func buildOnboardingNamesPerDayCallback(n int) string {
 	return callbackData{
 		Action: actionOnboarding,
@@ -201,6 +205,7 @@ func buildOnboardingNamesPerDayCallback(n int) string {
 	}.encode()
 }
 
+// buildOnboardingModeCallback builds callback data for selecting learning mode during onboarding.
 func buildOnboardingModeCallback(mode string) string {
 	return callbackData{
 		Action: actionOnboarding,
@@ -208,6 +213,7 @@ func buildOnboardingModeCallback(mode string) string {
 	}.encode()
 }
 
+// buildOnboardingRemindersCallback builds callback data for selecting reminder preference during onboarding.
 func buildOnboardingRemindersCallback(choice string) string {
 	return callbackData{
 		Action: actionOnboarding,
@@ -215,6 +221,7 @@ func buildOnboardingRemindersCallback(choice string) string {
 	}.encode()
 }
 
+// buildOnboardingCmdCallback builds callback data for selecting command behavior during onboarding.
 func buildOnboardingCmdCallback(cmd string) string {
 	return callbackData{
 		Action: actionOnboarding,
@@ -222,6 +229,7 @@ func buildOnboardingCmdCallback(cmd string) string {
 	}.encode()
 }
 
+// buildOnboardingTimezoneCallback builds callback data for selecting timezone during onboarding.
 func buildOnboardingTimezoneCallback(tz string) string {
 	// tz: "UTC+3", "UTC-7", "UTC+5:30"
 	return callbackData{
@@ -230,10 +238,12 @@ func buildOnboardingTimezoneCallback(tz string) string {
 	}.encode()
 }
 
+// buildResetConfirmCallback builds callback data for confirming a reset action.
 func buildResetConfirmCallback() string {
 	return callbackData{Action: actionReset, Params: []string{resetConfirm}}.encode()
 }
 
+// buildResetCancelCallback builds callback data for canceling a reset action.
 func buildResetCancelCallback() string {
 	return callbackData{Action: actionReset, Params: []string{resetCancel}}.encode()
 }

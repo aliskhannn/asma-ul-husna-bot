@@ -15,6 +15,7 @@ import (
 	"github.com/aliskhannn/asma-ul-husna-bot/internal/service"
 )
 
+// handleStart handles /start and sends either onboarding or returning-user welcome message.
 func (h *Handler) handleStart(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		isNewUser, err := h.userService.EnsureUser(ctx, userID, chatID)
@@ -63,17 +64,18 @@ func (h *Handler) handleNumber(numStr string) HandlerFunc {
 			return err
 		}
 
-		if audio != nil {
-			_ = h.send(*audio)
-		}
 		if err = h.send(msg); err != nil {
 			return err
+		}
+		if audio != nil {
+			_ = h.send(*audio)
 		}
 
 		return nil
 	}
 }
 
+// handleTimezoneText consumes timezone text input for both onboarding and settings flows.
 func (h *Handler) handleTimezoneText(text string, userID int64, userMsgID int) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		st, ok := h.tzInputWait[userID]
@@ -92,7 +94,7 @@ func (h *Handler) handleTimezoneText(text string, userID int64, userMsgID int) H
 			return h.send(newPlainMessage(chatID, msgInternalError))
 		}
 
-		// Cleanup messages (best-effort)
+		// Cleanup messages (best-effort).
 		if st.PromptMessageID != 0 {
 			_ = h.send(tgbotapi.NewDeleteMessage(st.ChatID, st.PromptMessageID))
 		}
@@ -116,7 +118,7 @@ func (h *Handler) handleTimezoneText(text string, userID int64, userMsgID int) H
 				return h.send(msg)
 			}
 
-			// Return to reminders settings (edit the settings message, not onboarding)
+			// Return to reminders settings (edit the settings message, not onboarding).
 			rem, err := h.reminderService.GetByUserID(ctx, userID)
 			if err != nil {
 				return h.send(newPlainMessage(chatID, fmt.Sprintf("🌍 Часовой пояс сохранён: %s", tz)))
@@ -126,7 +128,7 @@ func (h *Handler) handleTimezoneText(text string, userID int64, userMsgID int) H
 			kb := buildRemindersKeyboard(rem)
 			edit.ReplyMarkup = &kb
 
-			// optional: show toast via callback isn't possible here; send a short message if needed
+			// Optional: show toast via callback isn't possible here; send a short message if needed.
 			_ = h.send(newPlainMessage(chatID, fmt.Sprintf("🌍 Часовой пояс: %s", tz)))
 
 			return h.send(edit)
@@ -137,6 +139,7 @@ func (h *Handler) handleTimezoneText(text string, userID int64, userMsgID int) H
 	}
 }
 
+// normalizeUTCOffset normalizes a user-entered UTC offset into "UTC±H:MM" format.
 func normalizeUTCOffset(input string) (string, bool) {
 	s := strings.TrimSpace(input)
 	s = strings.ReplaceAll(s, " ", "")
@@ -185,12 +188,14 @@ func normalizeUTCOffset(input string) (string, bool) {
 	return fmt.Sprintf("UTC%s%d:%02d", sign, h, m), true
 }
 
+// handleToday starts the "today" flow at the first page.
 func (h *Handler) handleToday(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		return h.handleTodayPage(userID)(ctx, chatID, 0, 0)
 	}
 }
 
+// handleTodayPage renders and sends (or edits) a single "today" card page.
 func (h *Handler) handleTodayPage(userID int64) func(ctx context.Context, chatID int64, messageID int, page int) error {
 	return func(ctx context.Context, chatID int64, messageID int, page int) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
@@ -202,7 +207,7 @@ func (h *Handler) handleTodayPage(userID int64) func(ctx context.Context, chatID
 			namesPerDay = 1
 		}
 
-		// ensure today's plan exists (debt + new up to quota)
+		// Ensure today's plan exists (debt + new up to quota).
 		err = h.dailyNameService.EnsureTodayPlan(
 			ctx,
 			userID,
@@ -230,7 +235,7 @@ func (h *Handler) handleTodayPage(userID int64) func(ctx context.Context, chatID
 
 		nameNumber := todayNames[page]
 
-		// статус (✅ mastered, ⏳ иначе)
+		// Status indicates whether the name is mastered or still in progress.
 		status := "⏳"
 		pMap, _ := h.progressService.GetByNumbers(ctx, userID, []int{nameNumber})
 		if p := pMap[nameNumber]; p != nil && p.Phase == entities.PhaseMastered {
@@ -264,7 +269,7 @@ func (h *Handler) handleTodayPage(userID int64) func(ctx context.Context, chatID
 	}
 }
 
-// handleRandom shows random name from today list (guided) OR any name (free).
+// handleRandom shows a random name from today list (guided) or from all names (free).
 func (h *Handler) handleRandom(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		settings, err := h.settingsService.GetOrCreate(ctx, userID)
@@ -275,7 +280,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 		var nameNumbers []int
 
 		if settings.LearningMode == "guided" {
-			// Guided: random from today's names
+			// Guided: random from today's names.
 			todayNames, err := h.dailyNameService.GetTodayNames(ctx, userID)
 			if err != nil || len(todayNames) == 0 {
 				msg := newPlainMessage(chatID, "📚 Сегодня ещё не начали изучение.\nИспользуйте /next!")
@@ -283,7 +288,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 			}
 			nameNumbers = todayNames
 		} else {
-			// Free: truly random from all 99
+			// Free: truly random from all 99.
 			name, err := h.nameService.GetRandom(ctx)
 			if err != nil {
 				h.logger.Error("failed to get random name", zap.Error(err))
@@ -307,7 +312,7 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 			return nil
 		}
 
-		// Guided: pick random from today names
+		// Guided: pick random from today names.
 		randomIndex := rand.Intn(len(nameNumbers))
 		nameNumber := nameNumbers[randomIndex]
 
@@ -318,11 +323,11 @@ func (h *Handler) handleRandom(userID int64) HandlerFunc {
 			return err
 		}
 
-		if audio != nil {
-			_ = h.send(*audio)
-		}
 		if err = h.send(msg); err != nil {
 			return err
+		}
+		if audio != nil {
+			_ = h.send(*audio)
 		}
 
 		return nil
@@ -437,7 +442,7 @@ func (h *Handler) handleSettings(userID int64) HandlerFunc {
 	}
 }
 
-// handleQuiz starts a quiz for the user.
+// handleQuiz starts or resumes a quiz for the user.
 func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		isFirstQuiz, err := h.quizService.IsFirstQuiz(ctx, userID)
@@ -455,7 +460,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			return h.send(msg)
 		}
 
-		// Check for active session
+		// Check for active session.
 		activeSession, err := h.quizService.GetActiveSession(ctx, userID)
 		if err != nil {
 			h.logger.Error("failed to get active session",
@@ -465,9 +470,9 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			return h.send(newPlainMessage(chatID, msgQuizUnavailable))
 		}
 
-		// If there's an active session, resume it
+		// If there's an active session, resume it.
 		if activeSession != nil && activeSession.SessionStatus == "active" {
-			// Delete previous quiz question if it exists
+			// Delete previous quiz question if it exists.
 			if oldMsgID, exists := h.quizStorage.GetMessageID(activeSession.ID); exists {
 				_, _ = h.bot.Send(tgbotapi.NewDeleteMessage(chatID, oldMsgID))
 			}
@@ -486,8 +491,8 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			return h.sendQuizQuestionFromDB(chatID, activeSession, q, name, activeSession.CurrentQuestionNum, isFirstQuiz)
 		}
 
-		// Start new quiz session
-		totalQuestions := 5 // Default number of questions
+		// Start new quiz session.
+		totalQuestions := 5 // Default number of questions.
 		h.logger.Debug("starting new quiz session",
 			zap.Int64("user_id", userID),
 			zap.Int("total_questions", totalQuestions),
@@ -533,7 +538,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 			zap.Int("names_count", len(names)),
 		)
 
-		// Store names for quick access during quiz
+		// Store names for quick access during quiz.
 		h.quizStorage.Store(session.ID, names)
 
 		if err := h.send(newMessage(chatID, buildQuizStartMessage(settings.QuizMode))); err != nil {
@@ -550,6 +555,7 @@ func (h *Handler) handleQuiz(userID int64) HandlerFunc {
 	}
 }
 
+// handleReset shows a reset confirmation prompt.
 func (h *Handler) handleReset() HandlerFunc {
 	return func(ctx context.Context, chatID int64) error {
 		text := md("⚠️ ") + bold("Сброс прогресса и настроек") + "\n\n" +
