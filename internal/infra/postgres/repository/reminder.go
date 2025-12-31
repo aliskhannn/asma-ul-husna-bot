@@ -92,7 +92,7 @@ func (r *ReminderRepository) Upsert(ctx context.Context, reminder *entities.User
 	if reminder.NextSendAt != nil {
 		nextSendAt = *reminder.NextSendAt
 	} else {
-		nextSendAt = reminder.CalculateNextSendAt(timezone, time.Now())
+		nextSendAt = reminder.CalculateNextSendAt(timezone, time.Now().UTC())
 	}
 
 	query := `
@@ -164,7 +164,7 @@ func (r *ReminderRepository) GetDueReminder(ctx context.Context, userID int64) (
 	var nextSend pgtype.Timestamptz
 	var lastKind string
 
-	now := time.Now()
+	now := time.Now().UTC()
 
 	err := r.db.QueryRow(ctx, query, userID, now).Scan(
 		&rwu.UserID,

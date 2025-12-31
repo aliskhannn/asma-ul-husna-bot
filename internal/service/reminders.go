@@ -544,37 +544,20 @@ func (s *ReminderService) ToggleReminder(ctx context.Context, userID int64) erro
 	return nil
 }
 
-func ceilToNextTick(t time.Time, step time.Duration) time.Time {
-	if step <= 0 {
-		return t
-	}
-
-	// Truncate rounds down to a multiple of step since zero time. [web:377]
-	base := t.Truncate(step)
-	if base.Equal(t) {
-		return t
-	}
-	return base.Add(step)
-}
-
 // SnoozeReminder postpones the next reminder to the next scheduler tick after the given duration.
 // The tick is aligned to the user's configured reminder interval (e.g., every 2h/4h/6h).
-func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64, duration time.Duration) error {
+// SnoozeReminder postpones the next reminder to the next full UTC hour.
+// Works with the hourly cron dispatcher.
+func (s *ReminderService) SnoozeReminder(ctx context.Context, userID int64) error {
 	reminder, err := s.GetByUserID(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("get reminder: %w", err)
 	}
 
-	step := time.Duration(reminder.IntervalHours) * time.Hour
-	if step <= 0 {
-		step = time.Hour
-	}
-
 	nowUTC := time.Now().UTC()
-	target := nowUTC.Add(duration)
+	next := nowUTC.Truncate(time.Hour).Add(time.Hour)
 
-	next := ceilToNextTick(target, step)
-
+	reminder.IsEnabled = true
 	reminder.NextSendAt = &next
 	reminder.UpdatedAt = nowUTC
 
